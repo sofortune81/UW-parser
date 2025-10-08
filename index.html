@@ -52,14 +52,12 @@
         <label for="ratio">MC Ratio (0-1):</label>
         <input type="number" id="ratio" min="0" max="1" step="0.01" required>
         <br>
-        <label for="webhook">Discord Webhook URL:</label>
-        <input type="url" id="webhook" required placeholder="https://canary.discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_">
-        <br>
         <button type="submit">Process and Alert</button>
     </form>
     <div id="status"></div>
 
     <script>
+        const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Replace with your Discord webhook URL
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('csvFile');
         const form = document.getElementById('uploadForm');
@@ -104,10 +102,9 @@
             e.preventDefault();
             const file = fileInput.files[0];
             const ratio = parseFloat(document.getElementById('ratio').value);
-            const webhook = document.getElementById('webhook').value;
 
-            if (!file || ratio < 0 || ratio > 1 || !webhook) {
-                statusDiv.innerHTML = '<p style="color: red;">Please fill all fields correctly and upload a CSV.</p>';
+            if (!file || ratio < 0 || ratio > 1) {
+                statusDiv.innerHTML = '<p style="color: red;">Please upload a CSV and enter a valid MC ratio (0-1).</p>';
                 return;
             }
 
@@ -162,7 +159,7 @@
                     // Send to Discord
                     statusDiv.innerHTML = '<p>Sending alerts...</p>';
                     const promises = alerts.map(alert =>
-                        fetch(webhook, {
+                        fetch(webhookUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ content: alert })
