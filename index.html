@@ -1,177 +1,241 @@
-// Initialize drag-and-drop and file input handling
-const dropZone = document.getElementById('dropZone');
-const csvFileInput = document.getElementById('csvFile');
-const processButton = document.getElementById('processButton');
-const errorMessage = document.getElementById('errorMessage');
-const aggregateBody = document.getElementById('aggregateBody');
-const mcRatioInput = document.getElementById('mcRatio');
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Data Processor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        #dropZone {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin: 20px;
+            cursor: pointer;
+        }
+        #dropZone.dragover {
+            background-color: #e1e1e1;
+        }
+        #errorMessage {
+            color: red;
+            margin: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div id="dropZone">Drag and drop a CSV file here or click to select</div>
+    <input type="file" id="csvFile" accept=".csv" style="display: none;">
+    <div>
+        <label for="mcRatio">MC Ratio Threshold (0 to 1):</label>
+        <input type="number" id="mcRatio" step="0.01" min="0" max="1" value="0.01">
+        <button id="processButton" disabled>Process Data</button>
+    </div>
+    <div id="errorMessage"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Total Premium</th>
+                <th>Market Cap</th>
+                <th>Premium/MC Ratio</th>
+            </tr>
+        </thead>
+        <tbody id="aggregateBody"></tbody>
+    </table>
 
-let csvData = null;
+    <script>
+        // Initialize drag-and-drop and file input handling
+        const dropZone = document.getElementById('dropZone');
+        const csvFileInput = document.getElementById('csvFile');
+        const processButton = document.getElementById('processButton');
+        const errorMessage = document.getElementById('errorMessage');
+        const aggregateBody = document.getElementById('aggregateBody');
+        const mcRatioInput = document.getElementById('mcRatio');
 
-// Handle drag-and-drop
-dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-});
+        let csvData = null;
 
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('dragover');
-});
+        // Handle drag-and-drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
 
-dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.csv')) {
-        parseCSV(file);
-    } else {
-        showError('Please drop a valid CSV file.');
-    }
-});
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
 
-// Handle file input click
-dropZone.addEventListener('click', () => {
-    csvFileInput.click();
-});
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                parseCSV(file);
+            } else {
+                showError('Please drop a valid CSV file.');
+            }
+        });
 
-csvFileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file && file.name.endsWith('.csv')) {
-        parseCSV(file);
-    } else {
-        showError('Please select a valid CSV file.');
-    }
-});
+        // Handle file input click
+        dropZone.addEventListener('click', () => {
+            csvFileInput.click();
+        });
 
-// Parse CSV file
-function parseCSV(file) {
-    Papa.parse(file, {
-        delimiter: "|",
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: header => header.trim(), // Trim spaces from headers
-        transform: value => value.replace(/^\uFEFF/, '').trim(), // Remove BOM and trim spaces from values
-        complete: function(results) {
-            // Validate required columns
-            const requiredColumns = ['premium', 'marketcap', 'underlying_symbol'];
-            const missingColumns = requiredColumns.filter(col => !results.meta.fields.includes(col));
-            if (missingColumns.length > 0) {
-                showError(`Missing required CSV columns: ${missingColumns.join(', ')}`);
+        csvFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                parseCSV(file);
+            } else {
+                showError('Please select a valid CSV file.');
+            }
+        });
+
+        // Parse CSV file
+        function parseCSV(file) {
+            Papa.parse(file, {
+                delimiter: "|",
+                header: true,
+                skipEmptyLines: true,
+                transformHeader: header => header.trim(), // Trim spaces from headers
+                transform: value => value.replace(/^\uFEFF/, '').trim(), // Remove BOM and trim spaces from values
+                complete: function(results) {
+                    // Validate required columns
+                    const requiredColumns = ['premium', 'marketcap', 'underlying_symbol'];
+                    const missingColumns = requiredColumns.filter(col => !results.meta.fields.includes(col));
+                    if (missingColumns.length > 0) {
+                        showError(`Missing required CSV columns: ${missingColumns.join(', ')}`);
+                        return;
+                    }
+
+                    // Validate data rows
+                    csvData = results.data.filter(row => {
+                        if (!row.premium || !row.marketcap || !row.underlying_symbol ||
+                            row.premium.trim() === '' || row.marketcap.trim() === '') {
+                            console.warn('Skipping invalid row:', row);
+                            return false;
+                        }
+                        return true;
+                    });
+
+                    if (csvData.length === 0) {
+                        showError('No valid rows found in the CSV file.');
+                        return;
+                    }
+
+                    showError(''); // Clear any previous errors
+                    console.log('Parsed CSV data:', csvData);
+                    processButton.disabled = false; // Enable process button
+                },
+                error: function(error) {
+                    showError('Error parsing CSV: ' + error.message);
+                }
+            });
+        }
+
+        // Display error message
+        function showError(message) {
+            errorMessage.textContent = message;
+        }
+
+        // Function to send alert to Discord webhook
+        async function sendDiscordAlert(message) {
+            const webhookUrl = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN'; // Replace with your Discord webhook URL
+            try {
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        content: message,
+                    }),
+                });
+                console.log('Discord alert sent:', message);
+            } catch (error) {
+                console.error('Error sending Discord alert:', error);
+            }
+        }
+
+        // Process and aggregate data
+        processButton.addEventListener('click', () => {
+            if (!csvData) {
+                showError('No CSV data loaded. Please upload a CSV file.');
                 return;
             }
 
-            // Validate data rows
-            csvData = results.data.filter(row => {
-                if (!row.premium || !row.marketcap || !row.underlying_symbol ||
-                    row.premium.trim() === '' || row.marketcap.trim() === '') {
-                    console.warn('Skipping invalid row:', row);
-                    return false;
+            const mcRatioThreshold = parseFloat(mcRatioInput.value);
+            if (isNaN(mcRatioThreshold) || mcRatioThreshold < 0 || mcRatioThreshold > 1) {
+                showError('Please enter a valid MC Ratio between 0 and 1.');
+                return;
+            }
+
+            // Aggregate data by underlying_symbol
+            const aggregates = {};
+            csvData.forEach(row => {
+                const symbol = row.underlying_symbol;
+                const premium = parseFloat(row.premium.replace(/,/g, '')); // Remove commas
+                const marketcap = parseFloat(row.marketcap.replace(/,/g, '')); // Remove commas
+
+                if (!aggregates[symbol]) {
+                    aggregates[symbol] = {
+                        totalPremium: 0,
+                        marketcap: marketcap,
+                    };
                 }
-                return true;
+                aggregates[symbol].totalPremium += premium;
             });
 
-            if (csvData.length === 0) {
-                showError('No valid rows found in the CSV file.');
-                return;
+            // Calculate ratios and filter by MC Ratio threshold
+            const tableData = Object.keys(aggregates).map(symbol => {
+                const { totalPremium, marketcap } = aggregates[symbol];
+                const ratio = (totalPremium / marketcap).toFixed(4);
+                return {
+                    symbol,
+                    totalPremium: totalPremium.toLocaleString(),
+                    marketcap: marketcap.toLocaleString(),
+                    ratio: parseFloat(ratio),
+                };
+            }).filter(row => row.ratio >= mcRatioThreshold);
+
+            // Sort by ratio descending
+            tableData.sort((a, b) => b.ratio - a.ratio);
+
+            // Populate table
+            aggregateBody.innerHTML = '';
+            tableData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.symbol}</td>
+                    <td>${row.totalPremium}</td>
+                    <td>${row.marketcap}</td>
+                    <td>${row.ratio}</td>
+                `;
+                aggregateBody.appendChild(tr);
+
+                // Trigger Discord alert if ratio exceeds threshold
+                if (row.ratio >= mcRatioThreshold) {
+                    sendDiscordAlert(`Alert: ${row.symbol} has a Premium/Market Cap Ratio of ${row.ratio}`);
+                }
+            });
+
+            if (tableData.length === 0) {
+                showError('No data meets the MC Ratio threshold.');
             }
-
-            showError(''); // Clear any previous errors
-            console.log('Parsed CSV data:', csvData);
-            processButton.disabled = false; // Enable process button
-        },
-        error: function(error) {
-            showError('Error parsing CSV: ' + error.message);
-        }
-    });
-}
-
-// Display error message
-function showError(message) {
-    errorMessage.textContent = message;
-}
-```javascript
-// Function to send alert to Discord webhook
-async function sendDiscordAlert(message) {
-    const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Replace with your Discord webhook URL
-    try {
-        await fetch(webhookUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                content: message,
-            }),
         });
-        console.log('Discord alert sent:', message);
-    } catch (error) {
-        console.error('Error sending Discord alert:', error);
-    }
-}
+    </script>
+</body>
+</html>
 ```
-// Process and aggregate data
-processButton.addEventListener('click', () => {
-    if (!csvData) {
-        showError('No CSV data loaded. Please upload a CSV file.');
-        return;
-    }
-
-    const mcRatioThreshold = parseFloat(mcRatioInput.value);
-    if (isNaN(mcRatioThreshold) || mcRatioThreshold < 0 || mcRatioThreshold > 1) {
-        showError('Please enter a valid MC Ratio between 0 and 1.');
-        return;
-    }
-
-    // Aggregate data by underlying_symbol
-    const aggregates = {};
-    csvData.forEach(row => {
-        const symbol = row.underlying_symbol;
-        const premium = parseFloat(row.premium.replace(/,/g, '')); // Remove commas
-        const marketcap = parseFloat(row.marketcap.replace(/,/g, '')); // Remove commas
-
-        if (!aggregates[symbol]) {
-            aggregates[symbol] = {
-                totalPremium: 0,
-                marketcap: marketcap,
-            };
-        }
-        aggregates[symbol].totalPremium += premium;
-    });
-
-    // Calculate ratios and filter by MC Ratio threshold
-    const tableData = Object.keys(aggregates).map(symbol => {
-        const { totalPremium, marketcap } = aggregates[symbol];
-        const ratio = (totalPremium / marketcap).toFixed(4);
-        return {
-            symbol,
-            totalPremium: totalPremium.toLocaleString(),
-            marketcap: marketcap.toLocaleString(),
-            ratio: parseFloat(ratio),
-        };
-    }).filter(row => row.ratio >= mcRatioThreshold);
-
-    // Sort by ratio descending
-    tableData.sort((a, b) => b.ratio - a.ratio);
-
-    // Populate table
-    aggregateBody.innerHTML = '';
-    tableData.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${row.symbol}</td>
-            <td>${row.totalPremium}</td>
-            <td>${row.marketcap}</td>
-            <td>${row.ratio}</td>
-        `;
-        aggregateBody.appendChild(tr);
-
-        // Trigger alert if ratio exceeds threshold
-        if (row.ratio >= mcRatioThreshold) {
-            alert(`Alert: ${row.symbol} has a Premium/Market Cap Ratio of ${row.ratio}`);
-        }
-    });
-
-    if (tableData.length === 0) {
-        showError('No data meets the MC Ratio threshold.');
-    }
-});
