@@ -40,8 +40,8 @@
     <div id="dropZone">Drag and drop a CSV file here or click to select</div>
     <input type="file" id="csvFile" accept=".csv" style="display: none;">
     <div>
-        <label for="mcRatio">MC Ratio Threshold (0 to 1):</label>
-        <input type="number" id="mcRatio" step="0.01" min="0" max="1" value="0.01">
+        <label for="mcRatio">MC Ratio Threshold:</label>
+        <input type="number" id="mcRatio" step="0.01" value="100">
         <button id="processButton" disabled>Process Data</button>
     </div>
     <div id="errorMessage"></div>
@@ -201,14 +201,14 @@
             // Calculate ratios and filter by MC Ratio threshold
             const tableData = Object.keys(aggregates).map(symbol => {
                 const { totalPremium, marketcap } = aggregates[symbol];
-                const ratio = (totalPremium / marketcap).toFixed(4);
+                const ratio = (marketcap / totalPremium).toFixed(4);
                 return {
                     symbol,
                     totalPremium: totalPremium.toLocaleString(),
                     marketcap: marketcap.toLocaleString(),
                     ratio: parseFloat(ratio),
                 };
-            }).filter(row => row.ratio >= mcRatioThreshold);
+            }).filter(row => row.ratio <= mcRatioThreshold);
 
             // Sort by ratio descending
             tableData.sort((a, b) => b.ratio - a.ratio);
