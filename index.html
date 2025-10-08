@@ -1,263 +1,158 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Options Alert Tool</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .drop-zone {
-            border: 2px dashed #ccc;
-            padding: 20px;
-            text-align: center;
-            margin-bottom: 20px;
-            cursor: pointer;
-        }
-        .drop-zone.dragover {
-            background-color: #e0e0e0;
-            border-color: #000;
-        }
-        input, button {
-            margin: 10px 0;
-            padding: 8px;
-            width: 100%;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        #status {
-            margin-top: 20px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        .error-row {
-            background-color: #ffe6e6;
-        }
-    </style>
-</head>
-<body>
-    <h1>Options Alert Tool</h1>
-    <div id="dropZone" class="drop-zone">
-        Drag and drop your CSV file here or click to select
-        <input type="file" id="csvFile" accept=".csv" style="display: none;">
-    </div>
-    <form id="uploadForm">
-        <label for="ratio">MC Ratio (0-1):</label>
-        <input type="number" id="ratio" min="0" max="1" step="0.01" required>
-        <br>
-        <button type="submit">Process and Alert</button>
-    </form>
-    <div id="status"></div>
-    <div id="resultsTable" style="display: none;">
-        <h2>Aggregate Values</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Underlying Symbol</th>
-                    <th>Total Premium</th>
-                    <th>Market Cap</th>
-                    <th>Premium/Market Cap Ratio</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-        </table>
-    </div>
+// Initialize drag-and-drop and file input handling
+const dropZone = document.getElementById('dropZone');
+const csvFileInput = document.getElementById('csvFile');
+const processButton = document.getElementById('processButton');
+const errorMessage = document.getElementById('errorMessage');
+const aggregateBody = document.getElementById('aggregateBody');
+const mcRatioInput = document.getElementById('mcRatio');
 
-    <script>
-        const webhookUrl = 'YOUR_DISCORD_WEBHOOK_URL'; // Replace with your Discord webhook URL
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('csvFile');
-        const form = document.getElementById('uploadForm');
-        const statusDiv = document.getElementById('status');
-        const resultsTable = document.getElementById('resultsTable');
-        const tableBody = document.getElementById('tableBody');
+let csvData = null;
 
-        // Handle drag-and-drop events
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
+// Handle drag-and-drop
+dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+});
 
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
+dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('dragover');
+});
 
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type === 'text/csv') {
-                fileInput.files = files;
-                statusDiv.innerHTML = `<p>File "${files[0].name}" loaded.</p>`;
-            } else {
-                statusDiv.innerHTML = '<p style="color: red;">Please drop a valid CSV file.</p>';
-            }
-        });
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.csv')) {
+        parseCSV(file);
+    } else {
+        showError('Please drop a valid CSV file.');
+    }
+});
 
-        // Allow clicking the drop zone to trigger file input
-        dropZone.addEventListener('click', () => {
-            fileInput.click();
-        });
+// Handle file input click
+dropZone.addEventListener('click', () => {
+    csvFileInput.click();
+});
 
-        // Handle file input change (for both click and drag)
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length > 0) {
-                statusDiv.innerHTML = `<p>File "${fileInput.files[0].name}" loaded.</p>`;
-            }
-        });
+csvFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file && file.name.endsWith('.csv')) {
+        parseCSV(file);
+    } else {
+        showError('Please select a valid CSV file.');
+    }
+});
 
-        // Form submission
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const file = fileInput.files[0];
-            const ratio = parseFloat(document.getElementById('ratio').value);
-
-            if (!file || ratio < 0 || ratio > 1) {
-                statusDiv.innerHTML = '<p style="color: red;">Please upload a CSV and enter a valid MC ratio (0-1).</p>';
+// Parse CSV file
+function parseCSV(file) {
+    Papa.parse(file, {
+        delimiter: "|",
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: header => header.trim(), // Trim spaces from headers
+        transform: value => value.replace(/^\uFEFF/, '').trim(), // Remove BOM and trim spaces from values
+        complete: function(results) {
+            // Validate required columns
+            const requiredColumns = ['premium', 'marketcap', 'underlying_symbol'];
+            const missingColumns = requiredColumns.filter(col => !results.meta.fields.includes(col));
+            if (missingColumns.length > 0) {
+                showError(`Missing required CSV columns: ${missingColumns.join(', ')}`);
                 return;
             }
 
-            statusDiv.innerHTML = '<p>Processing CSV...</p>';
-
-            const text = await file.text();
-            Papa.parse(text, {
-                header: true,
-                skipEmptyLines: true,
-                transformHeader: (header) => header.trim().toLowerCase(), // Trim and normalize headers
-                complete: function(results) {
-                    const data = results.data;
-                    let invalidRows = 0;
-                    const requiredFields = ['underlying_symbol', 'premium', 'marketcap', 'date', 'time', 'side', 'strike', 'type', 'expiry', 'bid', 'ask', 'underlying_price'];
-
-                    // Validate headers
-                    const headers = results.meta.fields.map(field => field.trim().toLowerCase());
-                    const missingFields = requiredFields.filter(field => !headers.includes(field));
-                    if (missingFields.length > 0) {
-                        statusDiv.innerHTML = `<p style="color: red;">Missing required CSV columns: ${missingFields.join(', ')}</p>`;
-                        return;
-                    }
-
-                    // Group by underlying_symbol
-                    const groups = {};
-                    data.forEach((row, index) => {
-                        const underlying = row.underlying_symbol;
-                        const premium = parseFloat(row.premium);
-                        const marketcap = parseFloat(row.marketcap);
-
-                        // Validate row
-                        if (!underlying || isNaN(premium) || isNaN(marketcap) || marketcap === 0) {
-                            invalidRows++;
-                            return;
-                        }
-
-                        if (!groups[underlying]) {
-                            groups[underlying] = {
-                                rows: [],
-                                totalPremium: 0,
-                                marketcap: marketcap
-                            };
-                        }
-                        groups[underlying].rows.push(row);
-                        groups[underlying].totalPremium += premium;
-                    });
-
-                    // Populate table with aggregate values
-                    tableBody.innerHTML = '';
-                    for (const [underlying, group] of Object.entries(groups)) {
-                        const premPerCap = group.totalPremium / group.marketcap;
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>${underlying}</td>
-                            <td>${group.totalPremium.toFixed(2)}</td>
-                            <td>${group.marketcap.toFixed(2)}</td>
-                            <td>${isNaN(premPerCap) ? 'Invalid' : premPerCap.toFixed(4)}</td>
-                        `;
-                        tableBody.appendChild(row);
-                    }
-                    if (invalidRows > 0) {
-                        const errorRow = document.createElement('tr');
-                        errorRow.className = 'error-row';
-                        errorRow.innerHTML = `<td colspan="4">Skipped ${invalidRows} rows due to missing or invalid data (e.g., non-numeric premium/marketcap).</td>`;
-                        tableBody.appendChild(errorRow);
-                    }
-                    resultsTable.style.display = 'block';
-
-                    // Check condition and sort rows for alerts
-                    const alerts = [];
-                    for (const [underlying, group] of Object.entries(groups)) {
-                        const premPerCap = group.totalPremium / group.marketcap;
-                        if (premPerCap >= ratio && !isNaN(premPerCap) && isFinite(premPerCap)) {
-                            // Sort rows by date and time
-                            group.rows.sort((a, b) => {
-                                try {
-                                    const dateA = new Date(`${a.date} ${a.time}`);
-                                    const dateB = new Date(`${b.date} ${b.time}`);
-                                    return dateA - dateB;
-                                } catch (e) {
-                                    return 0; // Fallback to unsorted if date/time invalid
-                                }
-                            });
-                            // Format message
-                            let message = `**Alert for ${underlying}**\n`;
-                            message += `Total Premium / Market Cap: ${premPerCap.toFixed(4)}\n\n`;
-                            group.rows.forEach(row => {
-                                message += `Date: ${row.date}, Time: ${row.time}, Side: ${row.side}, Strike: ${row.strike}, Type: ${row.type}, Expiry: ${row.expiry}, Bid: ${row.bid}, Ask: ${row.ask}, Spot: ${row.underlying_price}\n`;
-                            });
-                            alerts.push(message);
-                        }
-                    }
-
-                    if (alerts.length === 0) {
-                        statusDiv.innerHTML = '<p>No alerts triggered.</p>';
-                        return;
-                    }
-
-                    // Send to Discord
-                    statusDiv.innerHTML = '<p>Sending alerts...</p>';
-                    const promises = alerts.map(alert =>
-                        fetch(webhookUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ content: alert })
-                        })
-                    );
-                    Promise.all(promises).then(() => {
-                        statusDiv.innerHTML = `<p>${alerts.length} alerts sent to Discord!</p>`;
-                    }).catch(err => {
-                        statusDiv.innerHTML = `<p style="color: red;">Error sending alerts: ${err.message}</p>`;
-                    });
-                },
-                error: function(error) {
-                    statusDiv.innerHTML = `<p style="color: red;">Error parsing CSV: ${error.message}</p>`;
+            // Validate data rows
+            csvData = results.data.filter(row => {
+                if (!row.premium || !row.marketcap || !row.underlying_symbol ||
+                    row.premium.trim() === '' || row.marketcap.trim() === '') {
+                    console.warn('Skipping invalid row:', row);
+                    return false;
                 }
+                return true;
             });
-        });
-    </script>
-</body>
-</html>
+
+            if (csvData.length === 0) {
+                showError('No valid rows found in the CSV file.');
+                return;
+            }
+
+            showError(''); // Clear any previous errors
+            console.log('Parsed CSV data:', csvData);
+            processButton.disabled = false; // Enable process button
+        },
+        error: function(error) {
+            showError('Error parsing CSV: ' + error.message);
+        }
+    });
+}
+
+// Display error message
+function showError(message) {
+    errorMessage.textContent = message;
+}
+
+// Process and aggregate data
+processButton.addEventListener('click', () => {
+    if (!csvData) {
+        showError('No CSV data loaded. Please upload a CSV file.');
+        return;
+    }
+
+    const mcRatioThreshold = parseFloat(mcRatioInput.value);
+    if (isNaN(mcRatioThreshold) || mcRatioThreshold < 0 || mcRatioThreshold > 1) {
+        showError('Please enter a valid MC Ratio between 0 and 1.');
+        return;
+    }
+
+    // Aggregate data by underlying_symbol
+    const aggregates = {};
+    csvData.forEach(row => {
+        const symbol = row.underlying_symbol;
+        const premium = parseFloat(row.premium.replace(/,/g, '')); // Remove commas
+        const marketcap = parseFloat(row.marketcap.replace(/,/g, '')); // Remove commas
+
+        if (!aggregates[symbol]) {
+            aggregates[symbol] = {
+                totalPremium: 0,
+                marketcap: marketcap,
+            };
+        }
+        aggregates[symbol].totalPremium += premium;
+    });
+
+    // Calculate ratios and filter by MC Ratio threshold
+    const tableData = Object.keys(aggregates).map(symbol => {
+        const { totalPremium, marketcap } = aggregates[symbol];
+        const ratio = (totalPremium / marketcap).toFixed(4);
+        return {
+            symbol,
+            totalPremium: totalPremium.toLocaleString(),
+            marketcap: marketcap.toLocaleString(),
+            ratio: parseFloat(ratio),
+        };
+    }).filter(row => row.ratio >= mcRatioThreshold);
+
+    // Sort by ratio descending
+    tableData.sort((a, b) => b.ratio - a.ratio);
+
+    // Populate table
+    aggregateBody.innerHTML = '';
+    tableData.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${row.symbol}</td>
+            <td>${row.totalPremium}</td>
+            <td>${row.marketcap}</td>
+            <td>${row.ratio}</td>
+        `;
+        aggregateBody.appendChild(tr);
+
+        // Trigger alert if ratio exceeds threshold
+        if (row.ratio >= mcRatioThreshold) {
+            alert(`Alert: ${row.symbol} has a Premium/Market Cap Ratio of ${row.ratio}`);
+        }
+    });
+
+    if (tableData.length === 0) {
+        showError('No data meets the MC Ratio threshold.');
+    }
+});
