@@ -40,8 +40,8 @@
     <div id="dropZone">Drag and drop a CSV file here or click to select</div>
     <input type="file" id="csvFile" accept=".csv" style="display: none;">
     <div>
-        <label for="mcRatio">MC Ratio Threshold:</label>
-        <input type="number" id="mcRatio" step="0.01" value="100">
+        <label for="mcRatio">Premium/MC * 1,000,000 Threshold (minimum 1):</label>
+        <input type="number" id="mcRatio" step="0.01" min="1" value="100">
         <button id="processButton" disabled>Process Data</button>
     </div>
     <div id="errorMessage"></div>
@@ -49,9 +49,10 @@
         <thead>
             <tr>
                 <th>Symbol</th>
+                <th>Type</th>
                 <th>Total Premium</th>
                 <th>Market Cap</th>
-                <th>Premium/MC Ratio</th>
+                <th>Premium/MC * 1,000,000</th>
             </tr>
         </thead>
         <tbody id="aggregateBody"></tbody>
@@ -113,7 +114,7 @@
                 transform: value => value.replace(/^\uFEFF/, '').trim(), // Remove BOM and trim spaces from values
                 complete: function(results) {
                     // Validate required columns
-                    const requiredColumns = ['premium', 'marketcap', 'underlying_symbol'];
+                    const requiredColumns = ['premium', 'marketcap', 'underlying_symbol', 'side', 'type'];
                     const missingColumns = requiredColumns.filter(col => !results.meta.fields.includes(col));
                     if (missingColumns.length > 0) {
                         showError(`Missing required CSV columns: ${missingColumns.join(', ')}`);
@@ -122,8 +123,9 @@
 
                     // Validate data rows
                     csvData = results.data.filter(row => {
-                        if (!row.premium || !row.marketcap || !row.underlying_symbol ||
-                            row.premium.trim() === '' || row.marketcap.trim() === '') {
+                        if (!row.premium || !row.marketcap || !row.underlying_symbol || !row.side || !row.type ||
+                            row.premium.trim() === '' || row.marketcap.trim() === '' || row.underlying_symbol.trim() === '' ||
+                            row.side.trim() === '' || row.type.trim() === '') {
                             console.warn('Skipping invalid row:', row);
                             return false;
                         }
@@ -177,38 +179,50 @@
             }
 
             const mcRatioThreshold = parseFloat(mcRatioInput.value);
-            if (isNaN(mcRatioThreshold) || mcRatioThreshold < 0 || mcRatioThreshold > 10000000000) {
-                showError('Please enter a valid MC Ratio between 0 and 1.');
+            if (isNaN(mcRatioThreshold) || mcRatioThreshold < 1) {
+                showError('Please enter a valid threshold of 1 or greater.');
                 return;
             }
 
-            // Aggregate data by underlying_symbol
+            // Aggregate data by underlying_symbol and type
             const aggregates = {};
             csvData.forEach(row => {
                 const symbol = row.underlying_symbol;
+                const type = row.type;
                 const premium = parseFloat(row.premium.replace(/,/g, '')); // Remove commas
                 const marketcap = parseFloat(row.marketcap.replace(/,/g, '')); // Remove commas
+                const side = row.side.toUpperCase(); // Normalize to uppercase
 
-                if (!aggregates[symbol]) {
-                    aggregates[symbol] = {
+                const key = `${symbol}|${type}`; // Unique key for symbol and type combination
+                if (!aggregates[key]) {
+                    aggregates[key] = {
+                        symbol,
+                        type,
                         totalPremium: 0,
                         marketcap: marketcap,
                     };
                 }
-                aggregates[symbol].totalPremium += premium;
+
+                // Add or subtract premium based on side
+                if (side === 'ASK') {
+                    aggregates[key].totalPremium += premium;
+                } else if (side === 'BID') {
+                    aggregates[key].totalPremium -= premium;
+                }
             });
 
             // Calculate ratios and filter by MC Ratio threshold
-            const tableData = Object.keys(aggregates).map(symbol => {
-                const { totalPremium, marketcap } = aggregates[symbol];
-                const ratio = (marketcap / totalPremium).toFixed(4);
+            const tableData = Object.keys(aggregates).map(key => {
+                const { symbol, type, totalPremium, marketcap } = aggregates[key];
+                const ratio = marketcap !== 0 ? (totalPremium / marketcap * 1000000).toFixed(4) : 0;
                 return {
                     symbol,
+                    type,
                     totalPremium: totalPremium.toLocaleString(),
                     marketcap: marketcap.toLocaleString(),
                     ratio: parseFloat(ratio),
                 };
-            }).filter(row => row.ratio <= mcRatioThreshold);
+            }).filter(row => row.ratio >= mcRatioThreshold);
 
             // Sort by ratio descending
             tableData.sort((a, b) => b.ratio - a.ratio);
@@ -219,20 +233,21 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${row.symbol}</td>
+                    <td>${row.type}</td>
                     <td>${row.totalPremium}</td>
                     <td>${row.marketcap}</td>
                     <td>${row.ratio}</td>
                 `;
                 aggregateBody.appendChild(tr);
 
-                // Trigger Discord alert if ratio exceeds threshold
+                // Trigger Discord alert if ratio meets or exceeds threshold
                 if (row.ratio >= mcRatioThreshold) {
-                    sendDiscordAlert(`Alert: ${row.symbol} has a Premium/Market Cap Ratio of ${row.ratio}`);
+                    sendDiscordAlert(`Alert: ${row.symbol} (${row.type}) has a Premium/MC * 1,000,000 Ratio of ${row.ratio}`);
                 }
             });
 
             if (tableData.length === 0) {
-                showError('No data meets the MC Ratio threshold.');
+                showError('No data meets the Premium/MC * 1,000,000 threshold.');
             }
         });
     </script>
