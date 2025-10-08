@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSV Processor with Discord Alerts</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <title>CSV Data Processor with Discord Alerts</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="config.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -14,34 +15,18 @@
         }
         #dropZone {
             border: 2px dashed #ccc;
-            border-radius: 10px;
-            padding: 50px;
+            padding: 20px;
             text-align: center;
-            cursor: pointer;
             margin-bottom: 20px;
-        }
-        #dropZone:hover {
-            border-color: #999;
-        }
-        #threshold {
-            margin-bottom: 10px;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
             cursor: pointer;
         }
-        button:hover {
-            background-color: #0056b3;
+        #dropZone.dragover {
+            background-color: #e1e1e1;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
-            margin-bottom: 20px;
         }
         th, td {
             border: 1px solid #ddd;
@@ -51,56 +36,37 @@
         th {
             background-color: #f2f2f2;
         }
-        #status {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 5px;
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
         }
-        .error {
-            background-color: #f8d7da;
-            color: #721c24;
+        button:hover {
+            background-color: #0056b3;
         }
-        .success {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        h2 {
-            margin-top: 30px;
+        input[type="number"] {
+            padding: 5px;
+            width: 100px;
         }
     </style>
 </head>
 <body>
-    <h1>CSV Data Processor with Discord Alerts</h1>
-
     <div id="dropZone">
         Drag and drop a CSV file here or click to select
+        <input type="file" id="fileInput" accept=".csv" style="display: none;">
     </div>
 
     <div>
-        <label for="threshold">Premium/MC * 1,000,000 Threshold (minimum 1):</label>
-        <input type="number" id="threshold" value="1" min="1" step="0.01">
+        Premium/MC * 1,000,000 Threshold (minimum 1):
+        <input type="number" id="thresholdInput" min="1" value="1">
     </div>
 
     <button onclick="processData()">Process Data</button>
 
-    <div id="status"></div>
-
-    <h2>All Data</h2>
-    <table id="allDataTable" style="display: none;">
-        <thead>
-            <tr>
-                <th>Underlying Symbol</th>
-                <th>Type</th>
-                <th>Premium</th>
-                <th>Market Cap</th>
-                <th>Premium/MC * 1,000,000</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-
     <h2>Filtered Data (Above Threshold)</h2>
-    <table id="resultsTable" style="display: none;">
+    <table id="filteredDataTable">
         <thead>
             <tr>
                 <th>Underlying Symbol</th>
@@ -114,239 +80,172 @@
     </table>
 
     <script>
-        const WEBHOOK_URL = 'YOUR_DISCORD_WEBHOOK_URL_HERE'; // Replace with your actual webhook URL
-        let csvData = [];
-
         const dropZone = document.getElementById('dropZone');
-        const status = document.getElementById('status');
+        const fileInput = document.getElementById('fileInput');
+        const filteredDataTable = document.getElementById('filteredDataTable').getElementsByTagName('tbody')[0];
+        const thresholdInput = document.getElementById('thresholdInput');
 
-        dropZone.addEventListener('click', () => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.csv';
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    parseCSV(file);
-                }
-            };
-            input.click();
-        });
-
+        dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
-            dropZone.style.borderColor = '#999';
+            dropZone.classList.add('dragover');
         });
-
         dropZone.addEventListener('dragleave', () => {
-            dropZone.style.borderColor = '#ccc';
+            dropZone.classList.remove('dragover');
         });
-
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
-            dropZone.style.borderColor = '#ccc';
-            const file = e.dataTransfer.files[0];
-            if (file && file.name.endsWith('.csv')) {
-                parseCSV(file);
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                processData();
             }
         });
+        fileInput.addEventListener('change', processData);
 
-        function parseCSV(file) {
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        async function processData() {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a CSV file.');
+                return;
+            }
+
             Papa.parse(file, {
-                header: true,
-                skipEmptyLines: true,
-                complete: function(results) {
-                    csvData = results.data;
-                    console.log('Parsed CSV Headers:', results.meta.fields);
-                    console.log('Parsed CSV Data:', csvData);
-                    const requiredColumns = ['underlying_symbol', 'premium', 'marketcap'];
-                    const missingColumns = requiredColumns.filter(col => !results.meta.fields.includes(col));
-                    if (missingColumns.length > 0) {
-                        status.innerHTML = `<div class="error">Missing required columns in CSV: ${missingColumns.join(', ')}</div>`;
-                    } else {
-                        status.innerHTML = `<div class="success">CSV parsed successfully! ${csvData.length} rows loaded.</div>`;
+                complete: async (result) => {
+                    const data = result.data;
+                    if (!data || data.length === 0) {
+                        alert('CSV file is empty or invalid.');
+                        return;
+                    }
+
+                    // Ensure headers is an array
+                    const headers = Array.isArray(data[0]) ? data[0] : Object.keys(data[0] || {});
+                    if (!headers.length) {
+                        alert('No headers found in CSV file.');
+                        return;
+                    }
+
+                    // Normalize headers for case-insensitive comparison
+                    const normalizedHeaders = headers.map(h => h.trim().toLowerCase());
+                    const requiredHeaders = ['underlying_symbol', 'type', 'premium', 'marketcap'];
+                    const missingHeaders = requiredHeaders.filter(h => !normalizedHeaders.includes(h.toLowerCase()));
+                    if (missingHeaders.length > 0) {
+                        alert(`Missing required headers: ${missingHeaders.join(', ')}\nFound headers: ${headers.join(', ')}`);
+                        return;
+                    }
+
+                    // Map normalized headers to their original names
+                    const headerMap = {};
+                    headers.forEach((h, i) => {
+                        headerMap[normalizedHeaders[i]] = h;
+                    });
+
+                    const rows = data.slice(1);
+                    filteredDataTable.innerHTML = '';
+
+                    const threshold = parseFloat(thresholdInput.value) || 1;
+                    const filteredRows = [];
+
+                    // Process rows
+                    for (const row of rows) {
+                        const rowData = {};
+                        // Handle rows based on whether headers are from array or object
+                        if (Array.isArray(row)) {
+                            headers.forEach((header, i) => rowData[header.trim().toLowerCase()] = row[i] || '');
+                        } else {
+                            headers.forEach(header => rowData[header.trim().toLowerCase()] = row[header] || '');
+                        }
+
+                        // Access data using normalized header names
+                        const underlyingSymbol = rowData['underlying_symbol'];
+                        const type = rowData['type'];
+                        const premiumRaw = rowData['premium'];
+                        const marketcapRaw = rowData['marketcap'];
+
+                        if (!underlyingSymbol || !type || !premiumRaw || !marketcapRaw) {
+                            continue;
+                        }
+
+                        const premium = parseFloat(premiumRaw.replace(/,/g, ''));
+                        const marketCap = parseFloat(marketcapRaw.replace(/,/g, ''));
+                        if (isNaN(premium) || isNaN(marketCap)) {
+                            continue;
+                        }
+
+                        const ratio = (premium / marketCap) * 1000000;
+
+                        const formattedRow = {
+                            underlying_symbol: underlyingSymbol,
+                            type: type,
+                            premium: formatNumber(premium),
+                            marketcap: formatNumber(marketCap),
+                            ratio: ratio.toFixed(2)
+                        };
+
+                        if (ratio >= threshold) {
+                            filteredRows.push(formattedRow);
+                        }
+                    }
+
+                    // Populate filtered data table
+                    filteredRows.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${row.underlying_symbol}</td>
+                            <td>${row.type}</td>
+                            <td>${row.premium}</td>
+                            <td>${row.marketcap}</td>
+                            <td>${row.ratio}</td>
+                        `;
+                        filteredDataTable.appendChild(tr);
+                    });
+
+                    // Create Markdown table for Discord
+                    if (filteredRows.length > 0) {
+                        const headers = ['Underlying Symbol', 'Type', 'Premium', 'Market Cap', 'Premium/MC * 1M'];
+                        const colWidths = [20, 10, 15, 20, 15]; // Adjust for alignment
+                        let table = '```\n';
+                        table += headers.map((header, i) => header.padEnd(colWidths[i])).join('|') + '\n';
+                        table += headers.map((_, i) => '-'.repeat(colWidths[i])).join('|') + '\n';
+                        filteredRows.forEach(row => {
+                            table += [
+                                row.underlying_symbol.padEnd(colWidths[0]),
+                                row.type.padEnd(colWidths[1]),
+                                row.premium.replace(/,/g, '').padEnd(colWidths[2]),
+                                row.marketcap.replace(/,/g, '').padEnd(colWidths[3]),
+                                row.ratio.padEnd(colWidths[4])
+                            ].join('|') + '\n';
+                        });
+                        table += '```';
+
+                        // Send to Discord webhook
+                        try {
+                            await fetch(DISCORD_WEBHOOK_URL, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    content: table
+                                })
+                            });
+                        } catch (error) {
+                            console.error('Error sending to Discord:', error);
+                            alert('Failed to send data to Discord.');
+                        }
                     }
                 },
-                error: function(error) {
-                    status.innerHTML = `<div class="error">Error parsing CSV: ${error}</div>`;
+                header: true,
+                skipEmptyLines: true,
+                error: (error) => {
+                    console.error('PapaParse error:', error);
+                    alert('Error parsing CSV file: ' + error.message);
                 }
-            });
-        }
-
-        function processData() {
-            if (csvData.length === 0) {
-                status.innerHTML = `<div class="error">Please load a CSV file first.</div>`;
-                return;
-            }
-
-            const threshold = parseFloat(document.getElementById('threshold').value) || 1;
-
-            // Compute Premium/MC * 1M for each row
-            const allData = csvData.map(row => {
-                const premium = parseFloat(row['premium']) || 0;
-                const marketCap = parseFloat(row['marketcap']) || 0;
-                const ratio = marketCap > 0 ? (premium / marketCap) * 1000000 : 0;
-                console.log(`Calculating for ${row.underlying_symbol || 'Unknown'}: Premium = ${premium}, Market Cap = ${marketCap}, Ratio = ${ratio}`);
-                return {
-                    ...row,
-                    Ratio: ratio
-                };
-            });
-
-            // Filter data based on threshold
-            const filteredData = allData.filter(row => row.Ratio >= threshold);
-
-            console.log('All Data:', allData);
-            console.log('Filtered Data:', filteredData);
-
-            // Display all data table
-            const allTable = document.getElementById('allDataTable');
-            const allTbody = allTable.querySelector('tbody');
-            allTbody.innerHTML = '';
-            allData.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${row.underlying_symbol || ''}</td>
-                    <td>${row.type || ''}</td>
-                    <td>${row.premium || ''}</td>
-                    <td>${row.marketcap || ''}</td>
-                    <td>${row.Ratio.toFixed(2)}</td>
-                `;
-                allTbody.appendChild(tr);
-            });
-            allTable.style.display = allData.length > 0 ? 'table' : 'none';
-
-            // Display filtered data table
-            const table = document.getElementById('resultsTable');
-            const tbody = table.querySelector('tbody');
-            tbody.innerHTML = '';
-            filteredData.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${row.underlying_symbol || ''}</td>
-                    <td>${row.type || ''}</td>
-                    <td>${row.premium || ''}</td>
-                    <td>${row.marketcap || ''}</td>
-                    <td>${row.Ratio.toFixed(2)}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-            table.style.display = filteredData.length > 0 ? 'table' : 'none';
-
-            status.innerHTML = `<div class="success">Processed ${allData.length} rows, ${filteredData.length} above threshold.</div>`;
-
-            if (filteredData.length > 0) {
-                sendDiscordAlerts(filteredData);
-            } else {
-                status.innerHTML += `<div class="error">No data above threshold to send to Discord.</div>`;
-            }
-        }
-
-        function sendDiscordAlerts(data) {
-            if (!WEBHOOK_URL || WEBHOOK_URL === 'YOUR_DISCORD_WEBHOOK_URL_HERE') {
-                status.innerHTML += `<div class="error">Invalid or missing Discord webhook URL.</div>`;
-                return;
-            }
-
-            const now = new Date();
-            const date = now.toISOString().split('T')[0];
-            const time = now.toTimeString().split(' ')[0];
-
-            // Group data by underlying_symbol (ticker)
-            const grouped = {};
-            data.forEach(row => {
-                const symbol = row.underlying_symbol || 'Unknown';
-                if (!grouped[symbol]) {
-                    grouped[symbol] = [];
-                }
-                grouped[symbol].push(row);
-            });
-
-            console.log('Grouped Data for Discord:', grouped);
-
-            Object.entries(grouped).forEach(([ticker, rows]) => {
-                // Prepare fields for each row
-                const rowFields = rows.map(row => {
-                    const fields = {
-                        'Premium/mc ratio': row.Ratio.toFixed(2),
-                        date: date,
-                        time: time,
-                        underlying_symbol: row.underlying_symbol || '',
-                        side: row.side || '',
-                        strike: row.strike || '',
-                        type: row.type || '',
-                        expiry: row.expiry || '',
-                        DTE: row.DTE || '',
-                        option_chain_id: row.option_chain_id || '',
-                        marketcap: row.marketcap || '',
-                        premium: row.premium || '',
-                        BID: row.BID || '',
-                        ASK: row.ASK || '',
-                        price: row.price || '',
-                        underlying_price: row.underlying_price || '',
-                        size: row.size || '',
-                        volume: row.volume || ''
-                    };
-                    return Object.entries(fields)
-                        .map(([k, v]) => `**${k}:** ${v}`)
-                        .join('\n');
-                });
-
-                // Build message
-                let message = `**Ticker: ${ticker}**\n\n`;
-                rowFields.forEach(fields => {
-                    message += `${fields}\n\n`;
-                });
-
-                // Split if exceeds 1800 chars
-                const messages = [];
-                const lines = message.split('\n');
-                let currentMsg = `**Ticker: ${ticker}**\n\n`;
-                let currentLength = currentMsg.length;
-
-                for (const line of lines) {
-                    if (line.startsWith('**Ticker:')) continue;
-                    const testLength = currentLength + line.length + 1;
-                    if (testLength > 1800 && currentMsg !== `**Ticker: ${ticker}**\n\n`) {
-                        messages.push(currentMsg.trim());
-                        currentMsg = `**Ticker: ${ticker} (cont.)**\n\n${line}\n`;
-                        currentLength = currentMsg.length;
-                    } else {
-                        currentMsg += `${line}\n`;
-                        currentLength = currentMsg.length;
-                    }
-                }
-                if (currentMsg.trim()) {
-                    messages.push(currentMsg.trim());
-                }
-
-                console.log(`Messages for ${ticker}:`, messages);
-
-                // Send each message
-                messages.forEach((msg, index) => {
-                    setTimeout(() => {
-                        fetch(WEBHOOK_URL, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                content: msg
-                            })
-                        }).then(response => {
-                            if (response.ok) {
-                                console.log(`Alert sent for ${ticker} part ${index + 1}`);
-                                status.innerHTML += `<div class="success">Alert sent for ${ticker} part ${index + 1}</div>`;
-                            } else {
-                                console.error('Failed to send alert:', response.statusText);
-                                status.innerHTML += `<div class="error">Failed to send alert for ${ticker} part ${index + 1}: ${response.statusText}</div>`;
-                            }
-                        }).catch(error => {
-                            console.error('Error:', error);
-                            status.innerHTML += `<div class="error">Error sending alert for ${ticker}: ${error.message}</div>`;
-                        });
-                    }, index * 2000);
-                });
             });
         }
     </script>
