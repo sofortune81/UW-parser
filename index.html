@@ -8,7 +8,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
@@ -41,6 +41,7 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
+            margin-bottom: 20px;
         }
         th, td {
             border: 1px solid #ddd;
@@ -63,30 +64,48 @@
             background-color: #d4edda;
             color: #155724;
         }
+        h2 {
+            margin-top: 30px;
+        }
     </style>
 </head>
 <body>
     <h1>CSV Data Processor with Discord Alerts</h1>
-    
+
     <div id="dropZone">
         Drag and drop a CSV file here or click to select
     </div>
-    
+
     <div>
         <label for="threshold">Premium/MC * 1,000,000 Threshold (minimum 1):</label>
         <input type="number" id="threshold" value="1" min="1" step="0.01">
     </div>
-    
+
     <button onclick="processData()">Process Data</button>
-    
+
     <div id="status"></div>
-    
+
+    <h2>All Data</h2>
+    <table id="allDataTable" style="display: none;">
+        <thead>
+            <tr>
+                <th>Underlying Symbol</th>
+                <th>Type</th>
+                <th>Premium</th>
+                <th>Market Cap</th>
+                <th>Premium/MC * 1,000,000</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <h2>Filtered Data (Above Threshold)</h2>
     <table id="resultsTable" style="display: none;">
         <thead>
             <tr>
-                <th>Symbol</th>
+                <th>Underlying Symbol</th>
                 <th>Type</th>
-                <th>Total Premium</th>
+                <th>Premium</th>
                 <th>Market Cap</th>
                 <th>Premium/MC * 1,000,000</th>
             </tr>
@@ -95,8 +114,7 @@
     </table>
 
     <script>
-        // Replace with your Discord webhook URL
-        const WEBHOOK_URL = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Update this with your webhook URL
+        const WEBHOOK_URL = 'YOUR_DISCORD_WEBHOOK_URL_HERE'; // Replace with your actual webhook URL
         let csvData = [];
 
         const dropZone = document.getElementById('dropZone');
@@ -139,7 +157,15 @@
                 skipEmptyLines: true,
                 complete: function(results) {
                     csvData = results.data;
-                    status.innerHTML = `<div class="success">CSV parsed successfully! ${csvData.length} rows loaded.</div>`;
+                    console.log('Parsed CSV Headers:', results.meta.fields);
+                    console.log('Parsed CSV Data:', csvData);
+                    const requiredColumns = ['underlying_symbol', 'premium', 'marketcap'];
+                    const missingColumns = requiredColumns.filter(col => !results.meta.fields.includes(col));
+                    if (missingColumns.length > 0) {
+                        status.innerHTML = `<div class="error">Missing required columns in CSV: ${missingColumns.join(', ')}</div>`;
+                    } else {
+                        status.innerHTML = `<div class="success">CSV parsed successfully! ${csvData.length} rows loaded.</div>`;
+                    }
                 },
                 error: function(error) {
                     status.innerHTML = `<div class="error">Error parsing CSV: ${error}</div>`;
@@ -156,54 +182,87 @@
             const threshold = parseFloat(document.getElementById('threshold').value) || 1;
 
             // Compute Premium/MC * 1M for each row
-            const processedData = csvData.map(row => {
-                const totalPremium = parseFloat(row['Total Premium']) || 0;
-                const marketCap = parseFloat(row['Market Cap']) || 0;
-                const ratio = marketCap > 0 ? (totalPremium / marketCap) * 1000000 : 0;
+            const allData = csvData.map(row => {
+                const premium = parseFloat(row['premium']) || 0;
+                const marketCap = parseFloat(row['marketcap']) || 0;
+                const ratio = marketCap > 0 ? (premium / marketCap) * 1000000 : 0;
+                console.log(`Calculating for ${row.underlying_symbol || 'Unknown'}: Premium = ${premium}, Market Cap = ${marketCap}, Ratio = ${ratio}`);
                 return {
                     ...row,
                     Ratio: ratio
                 };
-            }).filter(row => row.Ratio >= threshold);
+            });
 
-            // Display table
+            // Filter data based on threshold
+            const filteredData = allData.filter(row => row.Ratio >= threshold);
+
+            console.log('All Data:', allData);
+            console.log('Filtered Data:', filteredData);
+
+            // Display all data table
+            const allTable = document.getElementById('allDataTable');
+            const allTbody = allTable.querySelector('tbody');
+            allTbody.innerHTML = '';
+            allData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.underlying_symbol || ''}</td>
+                    <td>${row.type || ''}</td>
+                    <td>${row.premium || ''}</td>
+                    <td>${row.marketcap || ''}</td>
+                    <td>${row.Ratio.toFixed(2)}</td>
+                `;
+                allTbody.appendChild(tr);
+            });
+            allTable.style.display = allData.length > 0 ? 'table' : 'none';
+
+            // Display filtered data table
             const table = document.getElementById('resultsTable');
             const tbody = table.querySelector('tbody');
             tbody.innerHTML = '';
-            processedData.forEach(row => {
+            filteredData.forEach(row => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${row.Symbol || ''}</td>
-                    <td>${row.Type || ''}</td>
-                    <td>${row['Total Premium'] || ''}</td>
-                    <td>${row['Market Cap'] || ''}</td>
+                    <td>${row.underlying_symbol || ''}</td>
+                    <td>${row.type || ''}</td>
+                    <td>${row.premium || ''}</td>
+                    <td>${row.marketcap || ''}</td>
                     <td>${row.Ratio.toFixed(2)}</td>
                 `;
                 tbody.appendChild(tr);
             });
-            table.style.display = processedData.length > 0 ? 'table' : 'none';
+            table.style.display = filteredData.length > 0 ? 'table' : 'none';
 
-            status.innerHTML = `<div class="success">Processed ${processedData.length} rows above threshold.</div>`;
+            status.innerHTML = `<div class="success">Processed ${allData.length} rows, ${filteredData.length} above threshold.</div>`;
 
-            if (processedData.length > 0) {
-                sendDiscordAlerts(processedData);
+            if (filteredData.length > 0) {
+                sendDiscordAlerts(filteredData);
+            } else {
+                status.innerHTML += `<div class="error">No data above threshold to send to Discord.</div>`;
             }
         }
 
         function sendDiscordAlerts(data) {
+            if (!WEBHOOK_URL || WEBHOOK_URL === 'YOUR_DISCORD_WEBHOOK_URL_HERE') {
+                status.innerHTML += `<div class="error">Invalid or missing Discord webhook URL.</div>`;
+                return;
+            }
+
             const now = new Date();
             const date = now.toISOString().split('T')[0];
             const time = now.toTimeString().split(' ')[0];
 
-            // Group data by Symbol (ticker)
+            // Group data by underlying_symbol (ticker)
             const grouped = {};
             data.forEach(row => {
-                const symbol = row.Symbol || 'Unknown';
+                const symbol = row.underlying_symbol || 'Unknown';
                 if (!grouped[symbol]) {
                     grouped[symbol] = [];
                 }
                 grouped[symbol].push(row);
             });
+
+            console.log('Grouped Data for Discord:', grouped);
 
             Object.entries(grouped).forEach(([ticker, rows]) => {
                 // Prepare fields for each row
@@ -212,15 +271,15 @@
                         'Premium/mc ratio': row.Ratio.toFixed(2),
                         date: date,
                         time: time,
-                        underlying_symbol: row.Symbol || '',
+                        underlying_symbol: row.underlying_symbol || '',
                         side: row.side || '',
                         strike: row.strike || '',
-                        type: row.Type || '',
+                        type: row.type || '',
                         expiry: row.expiry || '',
                         DTE: row.DTE || '',
                         option_chain_id: row.option_chain_id || '',
-                        marketcap: row['Market Cap'] || '',
-                        premium: row['Total Premium'] || '',
+                        marketcap: row.marketcap || '',
+                        premium: row.premium || '',
                         BID: row.BID || '',
                         ASK: row.ASK || '',
                         price: row.price || '',
@@ -242,24 +301,26 @@
                 // Split if exceeds 1800 chars
                 const messages = [];
                 const lines = message.split('\n');
-                let currentMsg = '**Ticker: ' + ticker + '**\n\n';
+                let currentMsg = `**Ticker: ${ticker}**\n\n`;
                 let currentLength = currentMsg.length;
 
                 for (const line of lines) {
                     if (line.startsWith('**Ticker:')) continue;
                     const testLength = currentLength + line.length + 1;
-                    if (testLength > 1800 && currentMsg !== '**Ticker: ' + ticker + '**\n\n') {
+                    if (testLength > 1800 && currentMsg !== `**Ticker: ${ticker}**\n\n`) {
                         messages.push(currentMsg.trim());
-                        currentMsg = '**Ticker: ' + ticker + ' (cont.)**\n\n' + line + '\n';
+                        currentMsg = `**Ticker: ${ticker} (cont.)**\n\n${line}\n`;
                         currentLength = currentMsg.length;
                     } else {
-                        currentMsg += line + '\n';
+                        currentMsg += `${line}\n`;
                         currentLength = currentMsg.length;
                     }
                 }
                 if (currentMsg.trim()) {
                     messages.push(currentMsg.trim());
                 }
+
+                console.log(`Messages for ${ticker}:`, messages);
 
                 // Send each message
                 messages.forEach((msg, index) => {
@@ -275,6 +336,7 @@
                         }).then(response => {
                             if (response.ok) {
                                 console.log(`Alert sent for ${ticker} part ${index + 1}`);
+                                status.innerHTML += `<div class="success">Alert sent for ${ticker} part ${index + 1}</div>`;
                             } else {
                                 console.error('Failed to send alert:', response.statusText);
                                 status.innerHTML += `<div class="error">Failed to send alert for ${ticker} part ${index + 1}: ${response.statusText}</div>`;
@@ -283,7 +345,7 @@
                             console.error('Error:', error);
                             status.innerHTML += `<div class="error">Error sending alert for ${ticker}: ${error.message}</div>`;
                         });
-                    }, index * 1000);
+                    }, index * 2000);
                 });
             });
         }
