@@ -177,7 +177,7 @@
             }
 
             const mcRatioThreshold = parseFloat(mcRatioInput.value);
-            if (isNaN(mcRatioThreshold) || mcRatioThreshold < 0 || mcRatioThreshold > 1) {
+            if (isNaN(mcRatioThreshold) || mcRatioThreshold < 0 || mcRatioThreshold > 10000000000) {
                 showError('Please enter a valid MC Ratio between 0 and 1.');
                 return;
             }
