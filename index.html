@@ -5,33 +5,109 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Options Alert Tool</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .drop-zone {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        .drop-zone.dragover {
+            background-color: #e0e0e0;
+            border-color: #000;
+        }
+        input, button {
+            margin: 10px 0;
+            padding: 8px;
+            width: 100%;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #status {
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
     <h1>Options Alert Tool</h1>
+    <div id="dropZone" class="drop-zone">
+        Drag and drop your CSV file here or click to select
+        <input type="file" id="csvFile" accept=".csv" style="display: none;">
+    </div>
     <form id="uploadForm">
-        <label for="csvFile">Upload CSV:</label>
-        <input type="file" id="csvFile" accept=".csv" required>
-        <br><br>
         <label for="ratio">MC Ratio (0-1):</label>
         <input type="number" id="ratio" min="0" max="1" step="0.01" required>
-        <br><br>
+        <br>
         <label for="webhook">Discord Webhook URL:</label>
         <input type="url" id="webhook" required placeholder="https://discord.com/api/webhooks/...">
-        <br><br>
+        <br>
         <button type="submit">Process and Alert</button>
     </form>
     <div id="status"></div>
 
     <script>
-        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('csvFile');
+        const form = document.getElementById('uploadForm');
+        const statusDiv = document.getElementById('status');
+
+        // Handle drag-and-drop events
+        dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
-            const file = document.getElementById('csvFile').files[0];
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'text/csv') {
+                fileInput.files = files;
+                statusDiv.innerHTML = `<p>File "${files[0].name}" loaded.</p>`;
+            } else {
+                statusDiv.innerHTML = '<p style="color: red;">Please drop a valid CSV file.</p>';
+            }
+        });
+
+        // Allow clicking the drop zone to trigger file input
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // Handle file input change (for both click and drag)
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                statusDiv.innerHTML = `<p>File "${fileInput.files[0].name}" loaded.</p>`;
+            }
+        });
+
+        // Form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = fileInput.files[0];
             const ratio = parseFloat(document.getElementById('ratio').value);
             const webhook = document.getElementById('webhook').value;
-            const statusDiv = document.getElementById('status');
 
             if (!file || ratio < 0 || ratio > 1 || !webhook) {
-                statusDiv.innerHTML = '<p style="color: red;">Please fill all fields correctly.</p>';
+                statusDiv.innerHTML = '<p style="color: red;">Please fill all fields correctly and upload a CSV.</p>';
                 return;
             }
 
@@ -50,19 +126,25 @@
                             groups[underlying] = {
                                 rows: [],
                                 totalPremium: 0,
-                                marketcap: parseFloat(row.marketcap) || 0 // Assume marketcap is same per underlying
+                                marketcap: parseFloat(row.marketcap) || 0
                             };
                         }
                         groups[underlying].rows.push(row);
                         groups[underlying].totalPremium += parseFloat(row.premium) || 0;
                     });
 
-                    // Check condition
+                    // Check condition and sort rows by date/time
                     const alerts = [];
                     for (const [underlying, group] of Object.entries(groups)) {
                         const premPerCap = group.totalPremium / group.marketcap;
                         if (premPerCap >= ratio) {
-                            // Format message for this underlying
+                            // Sort rows by date and time
+                            group.rows.sort((a, b) => {
+                                const dateA = new Date(`${a.date} ${a.time}`);
+                                const dateB = new Date(`${b.date} ${b.time}`);
+                                return dateA - dateB;
+                            });
+                            // Format message
                             let message = `**Alert for ${underlying}**\n`;
                             message += `Total Premium / Market Cap: ${premPerCap.toFixed(4)}\n\n`;
                             group.rows.forEach(row => {
