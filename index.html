@@ -3,59 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSV Data Processor</title>
+    <title>CSV Processor</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        #dropZone {
-            border: 2px dashed #ccc;
-            padding: 20px;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        #dropZone.dragover {
-            background-color: #e1e1e1;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        input[type="number"] {
-            width: 100px;
-            margin: 10px 0;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #dropZone { border: 2px dashed #ccc; padding: 20px; text-align: center; cursor: pointer; }
+        #dropZone.dragover { background-color: #e0e0e0; }
+        #mcRatioInput { margin: 10px 0; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        button { padding: 10px; margin: 10px 0; }
     </style>
 </head>
 <body>
-    <div id="dropZone">
-        Drag and drop a CSV file here or click to select
+    <div id="dropZone">Drag and drop a CSV file here or click to select</div>
+    <input type="file" id="fileInput" accept=".csv" style="display: none;">
+    <div>
+        <label for="mcRatioInput">Premium/MC * 1,000,000 Threshold (minimum 1):</label>
+        <input type="number" id="mcRatioInput" value="100" min="1">
+        <button onclick="processData()">Process Data</button>
     </div>
-    <input type="number" id="mcRatioThreshold" value="100" min="1" step="0.1">
-    <label for="mcRatioThreshold">Premium/MC * 1,000,000 Threshold (minimum 1):</label>
-    <br>
-    <button onclick="processData()">Process Data</button>
-    <table id="resultsTable">
+    <table id="resultTable">
         <thead>
             <tr>
                 <th>Symbol</th>
@@ -65,175 +33,157 @@
                 <th>Premium/MC * 1,000,000</th>
             </tr>
         </thead>
-        <tbody id="resultsBody"></tbody>
+        <tbody id="resultBody"></tbody>
     </table>
 
-    <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
     <script>
-        // Setting up drag-and-drop functionality
         const dropZone = document.getElementById('dropZone');
-        let csvData = null;
+        const fileInput = document.getElementById('fileInput');
+        const resultBody = document.getElementById('resultBody');
 
+        dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('dragover');
         });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
             const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFile(files[0]);
-            }
+            if (files.length) fileInput.files = files;
+            processFile(files[0]);
         });
+        fileInput.addEventListener('change', () => processFile(fileInput.files[0]));
 
-        dropZone.addEventListener('click', () => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.csv';
-            input.onchange = (e) => {
-                if (e.target.files.length > 0) {
-                    handleFile(e.target.files[0]);
-                }
+        function processFile(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const csvData = e.target.result;
+                parseCSV(csvData);
             };
-            input.click();
-        });
+            reader.readAsText(file);
+        }
 
-        // Handling CSV file parsing
-        function handleFile(file) {
-            Papa.parse(file, {
-                header: true,
-                skipEmptyLines: true,
-                dynamicTyping: false,
-                transformHeader: (header) => header.trim().replace(/^"|"$/g, ''),
-                transform: (value, header) => {
-                    let cleaned = value.trim().replace(/^"|"$/g, '');
-                    return cleaned;
-                },
-                complete: (results) => {
-                    csvData = results.data;
-                    alert('File loaded successfully. Click "Process Data" to analyze.');
-                },
-                error: (err) => {
-                    console.error('Parsing error:', err);
-                    alert('Error parsing CSV file.');
+        function parseCSV(csvData) {
+            const rows = csvData.split('\n').map(row => row.split(',').map(cell => cell.trim()));
+            const headers = rows[0];
+            const requiredColumns = ['date', 'time', 'underlying_symbol', 'side', 'strike', 'type', 'expiry', 'bid', 'ask', 'underlying_price', 'marketcap'];
+            const columnIndices = {};
+            requiredColumns.forEach(col => {
+                const index = headers.indexOf(col);
+                if (index === -1) {
+                    alert(`Missing required column: ${col}`);
+                    return;
                 }
+                columnIndices[col] = index;
             });
-        }
-
-        // Sending Discord alert with chunked Markdown table
-        async function sendDiscordAlert(underlying_symbol, type, rows) {
-            const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_';
-            const maxRowsPerMessage = 20;
-            const chunks = [];
-            for (let i = 0; i < rows.length; i += maxRowsPerMessage) {
-                chunks.push(rows.slice(i, i + maxRowsPerMessage));
-            }
-
-            for (let i = 0; i < chunks.length; i++) {
-                const chunk = chunks[i];
-                const tableHeader = "| Date | Time | Symbol | Side | Strike | Type | Expiry | Bid | Ask | Spot |\n" +
-                                   "|------|------|--------|------|--------|------|--------|-----|-----|------|\n";
-                let tableRows = chunk.map(row => {
-                    return `| ${row['date'] || ''} | ${row['time'] || ''} | ${row['underlying_symbol'] || ''} | ${row['side'] || ''} | ${row['strike'] || ''} | ${row['type'] || ''} | ${row['expiry'] || ''} | ${row['BID'] || ''} | ${row['ASK'] || ''} | ${row['underlying_price'] || ''} |`;
-                }).join('\n');
-
-                const messageContent = `New Alerts\n\`\`\`md\n${tableHeader}${tableRows}\n\`\`\``;
-                if (messageContent.length > 2000) {
-                    console.warn(`Message for ${underlying_symbol} (${type}) chunk ${i + 1} exceeds 2000 characters and will be skipped.`);
-                    continue;
-                }
-
-                try {
-                    const response = await fetch(webhookUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content: messageContent })
-                    });
-                    if (response.ok) {
-                        console.log(`Discord alert sent for ${underlying_symbol} (${type}) chunk ${i + 1} of ${chunks.length}`);
-                    } else {
-                        console.error(`Failed to send Discord alert for ${underlying_symbol} (${type}) chunk ${i + 1}: ${response.status}`);
-                    }
-                } catch (error) {
-                    console.error(`Error sending Discord alert for ${underlying_symbol} (${type}) chunk ${i + 1}:`, error);
-                }
-            }
-        }
-
-        // Processing CSV data and updating table
-        function processData() {
-            if (!csvData) {
-                alert('Please load a CSV file first.');
-                return;
-            }
-
-            const mcRatioThreshold = parseFloat(document.getElementById('mcRatioThreshold').value) || 100;
-            if (mcRatioThreshold < 1) {
-                alert('Threshold must be at least 1.');
-                return;
-            }
+            if (Object.keys(columnIndices).length !== requiredColumns.length) return;
 
             const aggregates = {};
-            csvData.forEach(row => {
-                const symbol = row['underlying_symbol'];
-                const type = row['type'];
-                const side = row['side'];
-                const premium = parseFloat(row['premium']);
-                const marketcap = parseFloat(row['marketcap']);
-
-                if (!symbol || !type || !side || isNaN(premium) || isNaN(marketcap)) {
-                    console.warn('Skipping row with missing or invalid data:', row);
-                    return;
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < headers.length) continue;
+                const symbol = row[columnIndices.underlying_symbol];
+                const type = row[columnIndices.type];
+                const side = row[columnIndices.side];
+                const premium = parseFloat(row[columnIndices.ask]) || parseFloat(row[columnIndices.bid]) || 0;
+                const marketCap = parseFloat(row[columnIndices.marketcap]) || 0;
+                if (!symbol || !type || marketCap <= 0) continue;
+                if (!['ASK', 'BID'].includes(side)) {
+                    console.warn(`Invalid side value "${side}" in row ${i + 1}`);
+                    continue;
                 }
-
-                if (side !== 'ASK' && side !== 'BID') {
-                    console.warn(`Skipping row with invalid side value: ${side}`);
-                    return;
-                }
-
                 const key = `${symbol}_${type}`;
                 if (!aggregates[key]) {
                     aggregates[key] = {
                         symbol,
                         type,
                         totalPremium: 0,
-                        marketcap,
+                        marketCap,
                         rows: []
                     };
                 }
+                aggregates[key].totalPremium += (side === 'ASK' ? premium : -premium);
+                aggregates[key].rows.push({
+                    date: row[columnIndices.date],
+                    time: row[columnIndices.time],
+                    symbol,
+                    side,
+                    strike: row[columnIndices.strike],
+                    type,
+                    expiry: row[columnIndices.expiry],
+                    bid: row[columnIndices.bid],
+                    ask: row[columnIndices.ask],
+                    spot: row[columnIndices.underlying_price]
+                });
+            }
+            displayResults(aggregates);
+        }
 
-                aggregates[key].totalPremium += (side === 'ASK' ? 1 : -1) * premium;
-                aggregates[key].rows.push(row);
-            });
-
-            const resultsBody = document.getElementById('resultsBody');
-            resultsBody.innerHTML = '';
-
+        function displayResults(aggregates) {
+            resultBody.innerHTML = '';
+            const mcRatioThreshold = Math.max(1, parseFloat(document.getElementById('mcRatioInput').value) || 100);
             Object.values(aggregates).forEach(agg => {
                 if (agg.totalPremium <= 0) return;
-
-                const ratio = (agg.totalPremium / agg.marketcap) * 1000000;
+                const ratio = (agg.totalPremium / agg.marketCap) * 1000000;
                 if (ratio >= mcRatioThreshold) {
                     const row = document.createElement('tr');
                     row.innerHTML = `
                         <td>${agg.symbol}</td>
                         <td>${agg.type}</td>
                         <td>${agg.totalPremium.toFixed(2)}</td>
-                        <td>${agg.marketcap.toFixed(2)}</td>
+                        <td>${agg.marketCap.toFixed(2)}</td>
                         <td>${ratio.toFixed(4)}</td>
                     `;
-                    resultsBody.appendChild(row);
-
-                    sendDiscordAlert(agg.symbol, agg.type, agg.rows);
+                    resultBody.appendChild(row);
+                    sendDiscordAlert(agg);
                 }
             });
         }
+
+        function sendDiscordAlert(agg) {
+            const maxRowsPerMessage = 20;
+            const rows = agg.rows;
+            const chunks = [];
+            for (let i = 0; i < rows.length; i += maxRowsPerMessage) {
+                chunks.push(rows.slice(i, i + maxRowsPerMessage));
+            }
+
+            const tableHeader = '| Date | Time | Symbol | Side | Strike | Type | Expiry | Bid | Ask | Spot |\n' +
+                               '|------|------|--------|------|--------|------|--------|-----|-----|------|\n';
+            const webhookUrl = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN';
+
+            chunks.forEach((chunk, index) => {
+                let message = 'New Alerts\n```md\n' + tableHeader;
+                chunk.forEach(row => {
+                    message += `| ${row.date} | ${row.time} | ${row.symbol} | ${row.side} | ${row.strike} | ${row.type} | ${row.expiry} | ${row.bid} | ${row.ask} | ${row.spot} |\n`;
+                });
+                message += '```';
+                if (message.length > 2000) {
+                    console.warn(`Message for ${agg.symbol} (${agg.type}) Part ${index + 1} exceeds 2000 characters and will not be sent.`);
+                    return;
+                }
+                fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: message })
+                })
+                .then(response => {
+                    if (response.ok) {
+                        console.log(`Sent Discord alert for ${agg.symbol} (${agg.type}) Part ${index + 1}`);
+                    } else {
+                        console.error(`Failed to send Discord alert for ${agg.symbol} (${agg.type}) Part ${index + 1}`);
+                    }
+                })
+                .catch(error => console.error('Error sending Discord alert:', error));
+            });
+        }
+
+        function processData() {
+            processFile(fileInput.files[0]);
+        }
     </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'98b75920de46851b',t:'MTc1OTk0NDQzOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
