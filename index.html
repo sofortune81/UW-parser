@@ -40,6 +40,22 @@
         #status {
             margin-top: 20px;
         }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
     </style>
 </head>
 <body>
@@ -55,13 +71,29 @@
         <button type="submit">Process and Alert</button>
     </form>
     <div id="status"></div>
+    <div id="resultsTable" style="display: none;">
+        <h2>Aggregate Values</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Underlying Symbol</th>
+                    <th>Total Premium</th>
+                    <th>Market Cap</th>
+                    <th>Premium/Market Cap Ratio</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
 
     <script>
-        const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Replace with your Discord webhook URL
+        const webhookUrl = 'YOUR_DISCORD_WEBHOOK_URL'; // Replace with your Discord webhook URL
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('csvFile');
         const form = document.getElementById('uploadForm');
         const statusDiv = document.getElementById('status');
+        const resultsTable = document.getElementById('resultsTable');
+        const tableBody = document.getElementById('tableBody');
 
         // Handle drag-and-drop events
         dropZone.addEventListener('dragover', (e) => {
@@ -130,7 +162,22 @@
                         groups[underlying].totalPremium += parseFloat(row.premium) || 0;
                     });
 
-                    // Check condition and sort rows by date/time
+                    // Populate table with aggregate values
+                    tableBody.innerHTML = '';
+                    for (const [underlying, group] of Object.entries(groups)) {
+                        const premPerCap = group.totalPremium / group.marketcap;
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${underlying}</td>
+                            <td>${group.totalPremium.toFixed(2)}</td>
+                            <td>${group.marketcap.toFixed(2)}</td>
+                            <td>${premPerCap.toFixed(4)}</td>
+                        `;
+                        tableBody.appendChild(row);
+                    }
+                    resultsTable.style.display = 'block';
+
+                    // Check condition and sort rows for alerts
                     const alerts = [];
                     for (const [underlying, group] of Object.entries(groups)) {
                         const premPerCap = group.totalPremium / group.marketcap;
