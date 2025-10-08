@@ -157,7 +157,7 @@
 
         // Function to send alert to Discord webhook
         async function sendDiscordAlert(symbol, type, ratio, relevantRows) {
-            const webhookUrl = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN'; // Replace with your Discord webhook URL
+            const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Replace with your Discord webhook URL
             const maxRowsPerMessage = 20; // Conservative estimate to stay under 2000-character limit
             const header = `Alert: ${symbol} (${type}) has a Premium/MC * 1,000,000 Ratio of ${ratio}\n\n`;
             const tableHeader = '```md\n| Date       | Time       | Symbol | Side | Strike | Type | Expiry     | Bid | Ask | Spot |\n';
