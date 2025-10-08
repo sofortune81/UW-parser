@@ -56,6 +56,9 @@
         tr:nth-child(even) {
             background-color: #f9f9f9;
         }
+        .error-row {
+            background-color: #ffe6e6;
+        }
     </style>
 </head>
 <body>
@@ -145,21 +148,42 @@
             const text = await file.text();
             Papa.parse(text, {
                 header: true,
+                skipEmptyLines: true,
                 complete: function(results) {
                     const data = results.data;
+                    let invalidRows = 0;
+                    const requiredFields = ['underlying_symbol', 'premium', 'marketcap', 'date', 'time', 'side', 'strike', 'type', 'expiry', 'BID', 'ASK', 'underlying_price'];
+
+                    // Validate headers
+                    const headers = results.meta.fields;
+                    const missingFields = requiredFields.filter(field => !headers.includes(field));
+                    if (missingFields.length > 0) {
+                        statusDiv.innerHTML = `<p style="color: red;">Missing required CSV columns: ${missingFields.join(', ')}</p>`;
+                        return;
+                    }
+
                     // Group by underlying_symbol
                     const groups = {};
-                    data.forEach(row => {
+                    data.forEach((row, index) => {
                         const underlying = row.underlying_symbol;
+                        const premium = parseFloat(row.premium);
+                        const marketcap = parseFloat(row.marketcap);
+
+                        // Validate row
+                        if (!underlying || isNaN(premium) || isNaN(marketcap) || marketcap === 0) {
+                            invalidRows++;
+                            return;
+                        }
+
                         if (!groups[underlying]) {
                             groups[underlying] = {
                                 rows: [],
                                 totalPremium: 0,
-                                marketcap: parseFloat(row.marketcap) || 0
+                                marketcap: marketcap
                             };
                         }
                         groups[underlying].rows.push(row);
-                        groups[underlying].totalPremium += parseFloat(row.premium) || 0;
+                        groups[underlying].totalPremium += premium;
                     });
 
                     // Populate table with aggregate values
@@ -171,9 +195,15 @@
                             <td>${underlying}</td>
                             <td>${group.totalPremium.toFixed(2)}</td>
                             <td>${group.marketcap.toFixed(2)}</td>
-                            <td>${premPerCap.toFixed(4)}</td>
+                            <td>${isNaN(premPerCap) ? 'Invalid' : premPerCap.toFixed(4)}</td>
                         `;
                         tableBody.appendChild(row);
+                    }
+                    if (invalidRows > 0) {
+                        const errorRow = document.createElement('tr');
+                        errorRow.className = 'error-row';
+                        errorRow.innerHTML = `<td colspan="4">Skipped ${invalidRows} rows due to missing or invalid data (e.g., non-numeric premium/marketcap).</td>`;
+                        tableBody.appendChild(errorRow);
                     }
                     resultsTable.style.display = 'block';
 
@@ -181,12 +211,16 @@
                     const alerts = [];
                     for (const [underlying, group] of Object.entries(groups)) {
                         const premPerCap = group.totalPremium / group.marketcap;
-                        if (premPerCap >= ratio) {
+                        if (premPerCap >= ratio && !isNaN(premPerCap) && isFinite(premPerCap)) {
                             // Sort rows by date and time
                             group.rows.sort((a, b) => {
-                                const dateA = new Date(`${a.date} ${a.time}`);
-                                const dateB = new Date(`${b.date} ${b.time}`);
-                                return dateA - dateB;
+                                try {
+                                    const dateA = new Date(`${a.date} ${a.time}`);
+                                    const dateB = new Date(`${b.date} ${b.time}`);
+                                    return dateA - dateB;
+                                } catch (e) {
+                                    return 0; // Fallback to unsorted if date/time invalid
+                                }
                             });
                             // Format message
                             let message = `**Alert for ${underlying}**\n`;
@@ -218,8 +252,8 @@
                         statusDiv.innerHTML = `<p style="color: red;">Error sending alerts: ${err.message}</p>`;
                     });
                 },
-                error: function() {
-                    statusDiv.innerHTML = '<p style="color: red;">Error parsing CSV.</p>';
+                error: function(error) {
+                    statusDiv.innerHTML = `<p style="color: red;">Error parsing CSV: ${error.message}</p>`;
                 }
             });
         });
