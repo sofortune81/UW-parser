@@ -67,19 +67,22 @@
         }
 
         function parseCSV(csvData) {
-            const rows = csvData.split('\n').map(row => row.split(',').map(cell => cell.trim()));
+            const rows = csvData.split('\n').map(row => row.split('|').map(cell => cell.trim()));
             const headers = rows[0];
             const requiredColumns = ['date', 'time', 'underlying_symbol', 'side', 'strike', 'type', 'expiry', 'bid', 'ask', 'underlying_price', 'marketcap'];
             const columnIndices = {};
             requiredColumns.forEach(col => {
                 const index = headers.indexOf(col);
                 if (index === -1) {
-                    alert(`Missing required column: ${col}`);
+                    console.error(`Missing required column: ${col}. Available headers: ${headers.join(', ')}`);
                     return;
                 }
                 columnIndices[col] = index;
             });
-            if (Object.keys(columnIndices).length !== requiredColumns.length) return;
+            if (Object.keys(columnIndices).length !== requiredColumns.length) {
+                alert('Missing required columns. Check console for details.');
+                return;
+            }
 
             const aggregates = {};
             for (let i = 1; i < rows.length; i++) {
@@ -109,14 +112,14 @@
                 aggregates[key].rows.push({
                     date: row[columnIndices.date],
                     time: row[columnIndices.time],
-                    symbol,
-                    side,
+                    underlying_symbol: row[columnIndices.underlying_symbol],
+                    side: row[columnIndices.side],
                     strike: row[columnIndices.strike],
-                    type,
+                    type: row[columnIndices.type],
                     expiry: row[columnIndices.expiry],
                     bid: row[columnIndices.bid],
                     ask: row[columnIndices.ask],
-                    spot: row[columnIndices.underlying_price]
+                    underlying_price: row[columnIndices.underlying_price]
                 });
             }
             displayResults(aggregates);
@@ -151,14 +154,14 @@
                 chunks.push(rows.slice(i, i + maxRowsPerMessage));
             }
 
-            const tableHeader = '| Date | Time | Symbol | Side | Strike | Type | Expiry | Bid | Ask | Spot |\n' +
-                               '|------|------|--------|------|--------|------|--------|-----|-----|------|\n';
-            const webhookUrl = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN';
+            const tableHeader = '| date | time | underlying_symbol | side | strike | type | expiry | bid | ask | underlying_price |\n' +
+                               '|------|------|------------------|------|--------|------|--------|-----|-----|-----------------|\n';
+            const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_';
 
             chunks.forEach((chunk, index) => {
                 let message = 'New Alerts\n```md\n' + tableHeader;
                 chunk.forEach(row => {
-                    message += `| ${row.date} | ${row.time} | ${row.symbol} | ${row.side} | ${row.strike} | ${row.type} | ${row.expiry} | ${row.bid} | ${row.ask} | ${row.spot} |\n`;
+                    message += `| ${row.date} | ${row.time} | ${row.underlying_symbol} | ${row.side} | ${row.strike} | ${row.type} | ${row.expiry} | ${row.bid} | ${row.ask} | ${row.underlying_price} |\n`;
                 });
                 message += '```';
                 if (message.length > 2000) {
