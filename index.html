@@ -149,13 +149,14 @@
             Papa.parse(text, {
                 header: true,
                 skipEmptyLines: true,
+                transformHeader: (header) => header.trim().toLowerCase(), // Trim and normalize headers
                 complete: function(results) {
                     const data = results.data;
                     let invalidRows = 0;
-                    const requiredFields = ['underlying_symbol', 'premium', 'marketcap', 'date', 'time', 'side', 'strike', 'type', 'expiry', 'BID', 'ASK', 'underlying_price'];
+                    const requiredFields = ['underlying_symbol', 'premium', 'marketcap', 'date', 'time', 'side', 'strike', 'type', 'expiry', 'bid', 'ask', 'underlying_price'];
 
                     // Validate headers
-                    const headers = results.meta.fields;
+                    const headers = results.meta.fields.map(field => field.trim().toLowerCase());
                     const missingFields = requiredFields.filter(field => !headers.includes(field));
                     if (missingFields.length > 0) {
                         statusDiv.innerHTML = `<p style="color: red;">Missing required CSV columns: ${missingFields.join(', ')}</p>`;
@@ -226,7 +227,7 @@
                             let message = `**Alert for ${underlying}**\n`;
                             message += `Total Premium / Market Cap: ${premPerCap.toFixed(4)}\n\n`;
                             group.rows.forEach(row => {
-                                message += `Date: ${row.date}, Time: ${row.time}, Side: ${row.side}, Strike: ${row.strike}, Type: ${row.type}, Expiry: ${row.expiry}, Bid: ${row.BID}, Ask: ${row.ASK}, Spot: ${row.underlying_price}\n`;
+                                message += `Date: ${row.date}, Time: ${row.time}, Side: ${row.side}, Strike: ${row.strike}, Type: ${row.type}, Expiry: ${row.expiry}, Bid: ${row.bid}, Ask: ${row.ask}, Spot: ${row.underlying_price}\n`;
                             });
                             alerts.push(message);
                         }
