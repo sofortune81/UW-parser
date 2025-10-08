@@ -73,7 +73,19 @@
                 <th>Type</th>
                 <th>Premium</th>
                 <th>Market Cap</th>
-                <th>Premium/MC * 1,000,000</th>
+                <th>Premium/MC * 1M</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Side</th>
+                <th>Strike</th>
+                <th>Expiry</th>
+                <th>DTE</th>
+                <th>Bid</th>
+                <th>Ask</th>
+                <th>Price</th>
+                <th>Underlying Price</th>
+                <th>Size</th>
+                <th>Volume</th>
             </tr>
         </thead>
         <tbody></tbody>
@@ -149,48 +161,81 @@
                     filteredDataTable.innerHTML = '';
 
                     const threshold = parseFloat(thresholdInput.value) || 1;
-                    const filteredRows = [];
 
-                    // Process rows
+                    // Aggregate rows by Underlying Symbol and Type
+                    const groups = new Map();
                     for (const row of rows) {
                         const rowData = {};
-                        // Handle rows based on whether headers are from array or object
                         if (Array.isArray(row)) {
                             headers.forEach((header, i) => rowData[header.trim().toLowerCase()] = row[i] || '');
                         } else {
                             headers.forEach(header => rowData[header.trim().toLowerCase()] = row[header] || '');
                         }
 
-                        // Access data using normalized header names
                         const underlyingSymbol = rowData['underlying_symbol'];
                         const type = rowData['type'];
                         const premiumRaw = rowData['premium'];
                         const marketcapRaw = rowData['marketcap'];
 
                         if (!underlyingSymbol || !type || !premiumRaw || !marketcapRaw) {
+                            console.warn('Skipping invalid row:', rowData);
                             continue;
                         }
 
                         const premium = parseFloat(premiumRaw.replace(/,/g, ''));
                         const marketCap = parseFloat(marketcapRaw.replace(/,/g, ''));
                         if (isNaN(premium) || isNaN(marketCap)) {
+                            console.warn('Skipping invalid row (non-numeric premium or marketcap):', rowData);
                             continue;
                         }
 
-                        const ratio = (premium / marketCap) * 1000000;
-
-                        const formattedRow = {
-                            underlying_symbol: underlyingSymbol,
-                            type: type,
-                            premium: formatNumber(premium),
-                            marketcap: formatNumber(marketCap),
-                            ratio: ratio.toFixed(2)
-                        };
-
-                        if (ratio >= threshold) {
-                            filteredRows.push(formattedRow);
+                        const key = `${underlyingSymbol}_${type}`;
+                        if (!groups.has(key)) {
+                            groups.set(key, {
+                                underlying_symbol: underlyingSymbol,
+                                type: type,
+                                premium: 0,
+                                marketcap: marketCap,
+                                date: rowData['date'] || '',
+                                time: rowData['time'] || '',
+                                side: rowData['side'] || '',
+                                strike: rowData['strike'] ? parseFloat(rowData['strike']) : '',
+                                expiry: rowData['expiry'] || '',
+                                dte: rowData['dte'] ? parseInt(rowData['dte']) : '',
+                                bid: rowData['bid'] ? parseFloat(rowData['bid']) : '',
+                                ask: rowData['ask'] ? parseFloat(rowData['ask']) : '',
+                                price: rowData['price'] ? parseFloat(rowData['price']) : '',
+                                underlying_price: rowData['underlying_price'] ? parseFloat(rowData['underlying_price']) : '',
+                                size: rowData['size'] ? parseInt(rowData['size']) : '',
+                                volume: rowData['volume'] ? parseInt(rowData['volume']) : ''
+                            });
                         }
+                        groups.get(key).premium += premium;
                     }
+
+                    // Filter aggregated rows by threshold
+                    const filteredRows = Array.from(groups.values()).filter(group => {
+                        const ratio = (group.premium / group.marketcap) * 1000000;
+                        return ratio >= threshold && group.premium > 0 && group.marketcap > 0;
+                    }).map(group => ({
+                        underlying_symbol: group.underlying_symbol,
+                        type: group.type,
+                        premium: formatNumber(group.premium),
+                        marketcap: formatNumber(group.marketcap),
+                        ratio: ((group.premium / group.marketcap) * 1000000).toFixed(2),
+                        date: group.date,
+                        time: group.time,
+                        side: group.side,
+                        strike: isNaN(group.strike) ? '' : group.strike.toFixed(2),
+                        expiry: group.expiry,
+                        dte: isNaN(group.dte) ? '' : group.dte,
+                        bid: isNaN(group.bid) ? '' : group.bid.toFixed(2),
+                        ask: isNaN(group.ask) ? '' : group.ask.toFixed(2),
+                        price: isNaN(group.price) ? '' : group.price.toFixed(2),
+                        underlying_price: isNaN(group.underlying_price) ? '' : group.underlying_price.toFixed(2),
+                        size: isNaN(group.size) ? '' : group.size,
+                        volume: isNaN(group.volume) ? '' : group.volume
+                    }));
 
                     // Populate filtered data table
                     filteredRows.forEach(row => {
@@ -201,42 +246,97 @@
                             <td>${row.premium}</td>
                             <td>${row.marketcap}</td>
                             <td>${row.ratio}</td>
+                            <td>${row.date}</td>
+                            <td>${row.time}</td>
+                            <td>${row.side}</td>
+                            <td>${row.strike}</td>
+                            <td>${row.expiry}</td>
+                            <td>${row.dte}</td>
+                            <td>${row.bid}</td>
+                            <td>${row.ask}</td>
+                            <td>${row.price}</td>
+                            <td>${row.underlying_price}</td>
+                            <td>${row.size}</td>
+                            <td>${row.volume}</td>
                         `;
                         filteredDataTable.appendChild(tr);
                     });
 
                     // Create Markdown table for Discord
                     if (filteredRows.length > 0) {
-                        const headers = ['Underlying Symbol', 'Type', 'Premium', 'Market Cap', 'Premium/MC * 1M'];
-                        const colWidths = [20, 10, 15, 20, 15]; // Adjust for alignment
-                        let table = '```\n';
-                        table += headers.map((header, i) => header.padEnd(colWidths[i])).join('|') + '\n';
-                        table += headers.map((_, i) => '-'.repeat(colWidths[i])).join('|') + '\n';
-                        filteredRows.forEach(row => {
-                            table += [
-                                row.underlying_symbol.padEnd(colWidths[0]),
-                                row.type.padEnd(colWidths[1]),
-                                row.premium.replace(/,/g, '').padEnd(colWidths[2]),
-                                row.marketcap.replace(/,/g, '').padEnd(colWidths[3]),
-                                row.ratio.padEnd(colWidths[4])
-                            ].join('|') + '\n';
-                        });
-                        table += '```';
+                        const headers = [
+                            'Ticker', 'Type', 'Premium', 'Market Cap', 'Prem/MC',
+                            'Date', 'Time', 'Side', 'Strike', 'Expiry', 'DTE', 'Bid', 'Ask',
+                            'Price', 'STK $', 'Size', 'Volume'
+                        ];
+                        const colWidths = [6, 4, 12, 18, 8, 10, 11, 4, 6, 11, 4, 5, 5, 5, 8, 8, 8];
 
-                        // Send to Discord webhook
-                        try {
-                            await fetch(DISCORD_WEBHOOK_URL, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    content: table
-                                })
-                            });
-                        } catch (error) {
-                            console.error('Error sending to Discord:', error);
-                            alert('Failed to send data to Discord.');
+                        const sanitize = (value) => (value || '').toString().replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|');
+
+                        const maxMessageLength = 1900;
+                        let messages = [];
+                        let currentTable = '```\n' + headers.map((header, i) => header.padEnd(colWidths[i])).join('|') + '\n' +
+                                          headers.map((_, i) => '-'.repeat(colWidths[i])).join('|') + '\n';
+                        let currentLength = currentTable.length;
+
+                        filteredRows.forEach(row => {
+                            const rowString = [
+                                sanitize(row.underlying_symbol).padEnd(colWidths[0]),
+                                sanitize(row.type).padEnd(colWidths[1]),
+                                sanitize(row.premium).padEnd(colWidths[2]),
+                                sanitize(row.marketcap).padEnd(colWidths[3]),
+                                sanitize(row.ratio).padEnd(colWidths[4]),
+                                sanitize(row.date).padEnd(colWidths[5]),
+                                sanitize(row.time).padEnd(colWidths[6]),
+                                sanitize(row.side).padEnd(colWidths[7]),
+                                sanitize(row.strike).padEnd(colWidths[8]),
+                                sanitize(row.expiry).padEnd(colWidths[9]),
+                                sanitize(row.dte).padEnd(colWidths[10]),
+                                sanitize(row.bid).padEnd(colWidths[11]),
+                                sanitize(row.ask).padEnd(colWidths[12]),
+                                sanitize(row.price).padEnd(colWidths[13]),
+                                sanitize(row.underlying_price).padEnd(colWidths[14]),
+                                sanitize(row.size).padEnd(colWidths[15]),
+                                sanitize(row.volume).padEnd(colWidths[16])
+                            ].join('|') + '\n';
+
+                            if (currentLength + rowString.length > maxMessageLength) {
+                                currentTable += '```';
+                                messages.push(currentTable);
+                                currentTable = '```\n' + headers.map((header, i) => header.padEnd(colWidths[i])).join('|') + '\n' +
+                                              headers.map((_, i) => '-'.repeat(colWidths[i])).join('|') + '\n';
+                                currentLength = currentTable.length;
+                            }
+
+                            currentTable += rowString;
+                            currentLength += rowString.length;
+                        });
+
+                        currentTable += '```';
+                        messages.push(currentTable);
+
+                        for (const message of messages) {
+                            try {
+                                const response = await fetch(DISCORD_WEBHOOK_URL, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                        content: message
+                                    })
+                                });
+                                if (!response.ok) {
+                                    const errorData = await response.json().catch(() => ({}));
+                                    console.error('Discord API error:', errorData);
+                                    alert(`Failed to send data to Discord: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+                                    return;
+                                }
+                            } catch (error) {
+                                console.error('Error sending to Discord:', error);
+                                alert('Failed to send data to Discord: ' + error.message);
+                                return;
+                            }
                         }
                     }
                 },
