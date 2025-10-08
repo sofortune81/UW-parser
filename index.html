@@ -153,7 +153,7 @@
 
         // Function to send alert to Discord webhook
         async function sendDiscordAlert(message) {
-            const webhookUrl = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN'; // Replace with your Discord webhook URL
+            const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Replace with your Discord webhook URL
             try {
                 await fetch(webhookUrl, {
                     method: 'POST',
@@ -183,16 +183,16 @@
                 return;
             }
 
-            // Aggregate data by underlying_symbol and type
+            // Aggregate data by underlying_symbol and type (P or C separately)
             const aggregates = {};
             csvData.forEach(row => {
                 const symbol = row.underlying_symbol;
-                const type = row.type;
+                const type = row.type.toUpperCase(); // Normalize to uppercase (P or C)
                 const premium = parseFloat(row.premium.replace(/,/g, '')); // Remove commas
                 const marketcap = parseFloat(row.marketcap.replace(/,/g, '')); // Remove commas
                 const side = row.side.toUpperCase(); // Normalize to uppercase
 
-                const key = `${symbol}|${type}`; // Unique key for symbol and type combination
+                const key = `${symbol}|${type}`; // Unique key for symbol and type (e.g., LNTH|P, LNTH|C)
                 if (!aggregates[key]) {
                     aggregates[key] = {
                         symbol,
