@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -156,29 +157,51 @@
 
         // Function to send alert to Discord webhook
         async function sendDiscordAlert(symbol, type, ratio, relevantRows) {
-            const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Replace with your Discord webhook URL
-            // Construct Markdown table for relevant rows
-            let table = `Alert: ${symbol} (${type}) has a Premium/MC * 1,000,000 Ratio of ${ratio}\n\n`;
-            table += '```md\n';
-            table += '| Date       | Time     | Symbol | Side | Strike | Type | Expiry     | Bid | Ask | Spot |\n';
-            table += '|------------|----------|--------|------|--------|------|------------|-----|-----|------|\n';
-            relevantRows.forEach(row => {
-                table += `| ${row.date} | ${row.time} | ${row.underlying_symbol} | ${row.side} | ${row.strike} | ${row.type} | ${row.expiry} | ${row.bid} | ${row.ask} | ${row.underlying_price} |\n`;
-            });
-            table += '```';
-            try {
-                await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        content: table,
-                    }),
+            const webhookUrl = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN'; // Replace with your Discord webhook URL
+            const maxRowsPerMessage = 20; // Conservative estimate to stay under 2000-character limit
+            const header = `Alert: ${symbol} (${type}) has a Premium/MC * 1,000,000 Ratio of ${ratio}\n\n`;
+            const tableHeader = '```md\n| Date       | Time       | Symbol | Side | Strike | Type | Expiry     | Bid | Ask | Spot |\n';
+            const tableSeparator = '|------------|------------|--------|------|--------|------|------------|-----|-----|------|\n';
+            const headerLength = header.length + tableHeader.length + tableSeparator.length;
+
+            // Split rows into chunks
+            const chunks = [];
+            for (let i = 0; i < relevantRows.length; i += maxRowsPerMessage) {
+                chunks.push(relevantRows.slice(i, i + maxRowsPerMessage));
+            }
+
+            // Send each chunk as a separate message
+            for (let i = 0; i < chunks.length; i++) {
+                let table = header;
+                if (chunks.length > 1) {
+                    table += `Part ${i + 1} of ${chunks.length}\n\n`;
+                }
+                table += tableHeader + tableSeparator;
+                chunks[i].forEach(row => {
+                    table += `| ${row.date} | ${row.time} | ${row.underlying_symbol} | ${row.side} | ${row.strike} | ${row.type} | ${row.expiry} | ${row.bid} | ${row.ask} | ${row.underlying_price} |\n`;
                 });
-                console.log('Discord alert sent:', table);
-            } catch (error) {
-                console.error('Error sending Discord alert:', error);
+                table += '```';
+
+                // Ensure message is under 2000 characters
+                if (table.length > 2000) {
+                    console.warn(`Discord message for ${symbol} (${type}) exceeds 2000 characters, truncating to ${maxRowsPerMessage} rows`);
+                    continue; // Skip sending oversized message
+                }
+
+                try {
+                    await fetch(webhookUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            content: table,
+                        }),
+                    });
+                    console.log(`Discord alert sent (Part ${i + 1} of ${chunks.length}):`, table);
+                } catch (error) {
+                    console.error(`Error sending Discord alert (Part ${i + 1}):`, error);
+                }
             }
         }
 
@@ -271,3 +294,4 @@
     </script>
 </body>
 </html>
+```
