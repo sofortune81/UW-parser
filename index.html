@@ -113,7 +113,7 @@
                 transform: value => value.replace(/^\uFEFF/, '').trim(), // Remove BOM and trim spaces from values
                 complete: function(results) {
                     // Validate required columns
-                    const requiredColumns = ['premium', 'marketcap', 'underlying_symbol', 'side', 'type'];
+                    const requiredColumns = ['premium', 'marketcap', 'underlying_symbol', 'side', 'type', 'date', 'time', 'strike', 'expiry', 'bid', 'ask', 'underlying_price'];
                     const missingColumns = requiredColumns.filter(col => !results.meta.fields.includes(col));
                     if (missingColumns.length > 0) {
                         showError(`Missing required CSV columns: ${missingColumns.join(', ')}`);
@@ -123,8 +123,11 @@
                     // Validate data rows
                     csvData = results.data.filter(row => {
                         if (!row.premium || !row.marketcap || !row.underlying_symbol || !row.side || !row.type ||
+                            !row.date || !row.time || !row.strike || !row.expiry || !row.bid || !row.ask || !row.underlying_price ||
                             row.premium.trim() === '' || row.marketcap.trim() === '' || row.underlying_symbol.trim() === '' ||
-                            row.side.trim() === '' || row.type.trim() === '') {
+                            row.side.trim() === '' || row.type.trim() === '' || row.date.trim() === '' || row.time.trim() === '' ||
+                            row.strike.trim() === '' || row.expiry.trim() === '' || row.bid.trim() === '' || row.ask.trim() === '' ||
+                            row.underlying_price.trim() === '') {
                             console.warn('Skipping invalid row:', row);
                             return false;
                         }
@@ -152,8 +155,17 @@
         }
 
         // Function to send alert to Discord webhook
-        async function sendDiscordAlert(message) {
+        async function sendDiscordAlert(symbol, type, ratio, relevantRows) {
             const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_'; // Replace with your Discord webhook URL
+            // Construct Markdown table for relevant rows
+            let table = `Alert: ${symbol} (${type}) has a Premium/MC * 1,000,000 Ratio of ${ratio}\n\n`;
+            table += '```md\n';
+            table += '| Date       | Time     | Symbol | Side | Strike | Type | Expiry     | Bid | Ask | Spot |\n';
+            table += '|------------|----------|--------|------|--------|------|------------|-----|-----|------|\n';
+            relevantRows.forEach(row => {
+                table += `| ${row.date} | ${row.time} | ${row.underlying_symbol} | ${row.side} | ${row.strike} | ${row.type} | ${row.expiry} | ${row.bid} | ${row.ask} | ${row.underlying_price} |\n`;
+            });
+            table += '```';
             try {
                 await fetch(webhookUrl, {
                     method: 'POST',
@@ -161,10 +173,10 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        content: message,
+                        content: table,
                     }),
                 });
-                console.log('Discord alert sent:', message);
+                console.log('Discord alert sent:', table);
             } catch (error) {
                 console.error('Error sending Discord alert:', error);
             }
@@ -199,6 +211,7 @@
                         type,
                         totalPremium: 0,
                         marketcap: marketcap,
+                        rows: [], // Store relevant rows for Discord alert
                     };
                 }
 
@@ -210,11 +223,14 @@
                 } else {
                     console.warn(`Skipping row with invalid side value: ${side}`);
                 }
+
+                // Store row for Discord alert
+                aggregates[key].rows.push(row);
             });
 
             // Calculate ratios and filter by MC Ratio threshold
             const tableData = Object.keys(aggregates).map(key => {
-                const { symbol, type, totalPremium, marketcap } = aggregates[key];
+                const { symbol, type, totalPremium, marketcap, rows } = aggregates[key];
                 const ratio = (marketcap !== 0 && totalPremium > 0) ? (totalPremium / marketcap * 1000000).toFixed(4) : 0;
                 return {
                     symbol,
@@ -222,6 +238,7 @@
                     totalPremium: totalPremium.toLocaleString(),
                     marketcap: marketcap.toLocaleString(),
                     ratio: parseFloat(ratio),
+                    rows, // Include rows for Discord alert
                 };
             }).filter(row => row.ratio >= mcRatioThreshold);
 
@@ -243,7 +260,7 @@
 
                 // Trigger Discord alert if ratio meets or exceeds threshold
                 if (row.ratio >= mcRatioThreshold) {
-                    sendDiscordAlert(`Alert: ${row.symbol} (${row.type}) has a Premium/MC * 1,000,000 Ratio of ${row.ratio}`);
+                    sendDiscordAlert(row.symbol, row.type, row.ratio, row.rows);
                 }
             });
 
