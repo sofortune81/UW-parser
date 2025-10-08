@@ -126,10 +126,16 @@
             });
         }
 
-        // Sending Discord alert with chunked Markdown table
+        // Helper to shorten fields for better fit
+        function shortenField(field, maxLen = 12) {
+            if (!field) return '';
+            return field.length > maxLen ? field.substring(0, maxLen) + '...' : field;
+        }
+
+        // Sending Discord alert with row-based format
         async function sendDiscordAlert(underlying_symbol, type, rows) {
             const webhookUrl = 'https://discord.com/api/webhooks/1425487382953594910/URZiWiEXVU1V3Z_FKGViaiCUp6jI1EiMlP_sXIAJgJXKN9_Rgpuo8RxU0KjZ085L_Ad_';
-            const maxRowsPerMessage = 20;
+            const maxRowsPerMessage = 10; // Reduced for safety
             const chunks = [];
             for (let i = 0; i < rows.length; i += maxRowsPerMessage) {
                 chunks.push(rows.slice(i, i + maxRowsPerMessage));
@@ -137,16 +143,20 @@
 
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i];
-                const tableHeader = "| Date | Time | Symbol | Side | Strike | Type | Expiry | Bid | Ask | Spot |\n" +
-                                   "|------|------|--------|------|--------|------|--------|-----|-----|------|\n";
-                let tableRows = chunk.map(row => {
-                    return `| ${row['date'] || ''} | ${row['time'] || ''} | ${row['underlying_symbol'] || ''} | ${row['side'] || ''} | ${row['strike'] || ''} | ${row['type'] || ''} | ${row['expiry'] || ''} | ${row['BID'] || ''} | ${row['ASK'] || ''} | ${row['underlying_price'] || ''} |`;
+                const ratio = ((rows[0].premium / rows[0].marketcap) * 1000000).toFixed(4);
+                let rowLines = chunk.map(row => {
+                    const shortTime = shortenField(row['time'], 8); // e.g., "12:55:53 PM" -> "12:55:53"
+                    const shortExpiry = shortenField(row['expiry'], 8); // e.g., "11/21/2025" -> "11/21/25..."
+                    return `${row['underlying_symbol'] || ''} | Ratio: ${ratio} | ${shortTime} | ${row['date'] || ''} | ${row['side'] || ''} | ${row['strike'] || ''} | ${row['type'] || ''} | ${shortExpiry} | ${row['BID'] || ''} | ${row['ASK'] || ''} | ${row['underlying_price'] || ''}`;
                 }).join('\n');
 
-                const messageContent = `New Alerts\n\`\`\`md\n${tableHeader}${tableRows}\n\`\`\``;
+                let messageContent = `**New Alerts for ${underlying_symbol} (${type})**\n\`\`\`\n${rowLines}\n\`\`\``;
+
+                console.log(`Attempting Discord send for ${underlying_symbol} (${type}) chunk ${i + 1}/${chunks.length}. Length: ${messageContent.length}`);
+
                 if (messageContent.length > 2000) {
                     console.warn(`Message for ${underlying_symbol} (${type}) chunk ${i + 1} exceeds 2000 characters and will be skipped.`);
-                    continue;
+                    messageContent = `**New Alerts for ${underlying_symbol} (${type})**\nTotal rows: ${rows.length}. Ratio: ${ratio}\nDetails: Check console or HTML table.`;
                 }
 
                 try {
@@ -156,9 +166,10 @@
                         body: JSON.stringify({ content: messageContent })
                     });
                     if (response.ok) {
-                        console.log(`Discord alert sent for ${underlying_symbol} (${type}) chunk ${i + 1} of ${chunks.length}`);
+                        console.log(`Discord alert sent successfully for ${underlying_symbol} (${type}) chunk ${i + 1} of ${chunks.length}`);
                     } else {
-                        console.error(`Failed to send Discord alert for ${underlying_symbol} (${type}) chunk ${i + 1}: ${response.status}`);
+                        const errorText = await response.text();
+                        console.error(`Failed to send Discord alert for ${underlying_symbol} (${type}) chunk ${i + 1}: ${response.status} - ${errorText}`);
                     }
                 } catch (error) {
                     console.error(`Error sending Discord alert for ${underlying_symbol} (${type}) chunk ${i + 1}:`, error);
@@ -219,6 +230,7 @@
                 if (agg.totalPremium <= 0) return;
 
                 const ratio = (agg.totalPremium / agg.marketcap) * 1000000;
+                console.log(`Processed ${agg.symbol} (${agg.type}): Ratio = ${ratio.toFixed(4)}, Threshold = ${mcRatioThreshold}`);
                 if (ratio >= mcRatioThreshold) {
                     const row = document.createElement('tr');
                     row.innerHTML = `
