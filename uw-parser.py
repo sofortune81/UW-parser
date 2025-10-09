@@ -20,9 +20,7 @@ st.markdown("""
     min-height: 300px !important;
     height: 300px !important;
     width: 600px !important;
-    display: block !important;
-    text-align: center !important;
-    width: 100% !important;
+    
 }
 </style>
 """, unsafe_allow_html=True)
