@@ -17,8 +17,12 @@ st.title("Parse UW FLOW")
 st.markdown("""
 <style>
 [data-testid="stFileUploaderDropzone"] {
-    min-height: 500px !important;
-    height: 500px !important;
+    min-height: 300px !important;
+    height: 300px !important;
+    width: 600px !important;
+    display: block !important;
+    text-align: center !important;
+    width: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -108,6 +112,7 @@ if uploaded_file is not None:
                     use_container_width=True,  # Fit to container width
                     column_config=col_config,  # Auto-fit per column
                     hide_index=True,  # Cleaner look
+                    height=fit,
                 )
 
             if st.button("Send to Discord (Image + Excel)"):
