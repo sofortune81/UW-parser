@@ -4,10 +4,11 @@ import requests
 import io
 import matplotlib.pyplot as plt
 #from config import DISCORD_WEBHOOK_URL  # Import from config.py
+import os
 
-DISCORD_WEBHOOK_URL = st.secrets.get("DISCORD_WEBHOOK_URL")
+DISCORD_WEBHOOK_URL = st.secrets.get("DISCORD_WEBHOOK_URL", os.getenv("DISCORD_WEBHOOK_URL"))
 if not DISCORD_WEBHOOK_URL:
-    st.error("DISCORD_WEBHOOK_URL not set in secrets!")
+    st.error("DISCORD_WEBHOOK_URL not set! Add to secrets.toml (local) or dashboard (cloud), or set env var.")
     st.stop()
 
 st.set_page_config(layout="wide")  # Force wide layout for full table width
