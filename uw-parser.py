@@ -3,15 +3,20 @@ import pandas as pd
 import requests
 import io
 import matplotlib.pyplot as plt
-from config import DISCORD_WEBHOOK_URL  # Import from config.py
+#from config import DISCORD_WEBHOOK_URL  # Import from config.py
+
+DISCORD_WEBHOOK_URL = st.secrets.get("DISCORD_WEBHOOK_URL")
+if not DISCORD_WEBHOOK_URL:
+    st.error("DISCORD_WEBHOOK_URL not set in secrets!")
+    st.stop()
 
 st.set_page_config(layout="wide")  # Force wide layout for full table width
 
 st.title("Parse UW FLOW")
-
 st.markdown("""
 <style>
-.st_file_uploader > div > div > div {
+[data-testid="stFileUploaderDropzone"] {
+    min-height: 500px !important;
     height: 500px !important;
 }
 </style>
