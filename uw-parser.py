@@ -38,6 +38,7 @@ st.markdown("""
 [data-testid="stDataFrame"] {
     width: 100% !important;
     max-width: none !important;
+    height: none !important;
 }
 
 [data-testid="stDataFrame"] .dataframe {
