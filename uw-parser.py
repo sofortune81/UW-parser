@@ -3,24 +3,51 @@ import pandas as pd
 import requests
 import io
 import matplotlib.pyplot as plt
-#from config import DISCORD_WEBHOOK_URL  # Import from config.py
 import os
-
-DISCORD_WEBHOOK_URL = st.secrets.get("DISCORD_WEBHOOK_URL", os.getenv("DISCORD_WEBHOOK_URL"))
-if not DISCORD_WEBHOOK_URL:
-    st.error("DISCORD_WEBHOOK_URL not set! Add to secrets.toml (local) or dashboard (cloud), or set env var.")
-    st.stop()
-
-st.set_page_config(layout="wide")  # Force wide layout for full table width
-
+#from config import DISCORD_WEBHOOK_URL  # Import from config.py
+DISCORD_WEBHOOK_URL = st.secrets["DISCORD_WEBHOOK_URL"]
+st.set_page_config(
+    layout="wide"
+ )
 st.title("Parse UW FLOW")
+
 st.markdown("""
 <style>
+/* Force full app width (overrides any container limits) */
+.stApp {
+    max-width: none !important;
+    width: 100vw !important;
+    padding: 0 !important;
+}
+
+/* Full width for file uploader container and dropzone */
+[data-testid="stFileUploader"] {
+    width: 100% !important;
+    max-width: none !important;
+}
+
 [data-testid="stFileUploaderDropzone"] {
+    width: 100% !important;
+    max-width: none !important;
     min-height: 300px !important;
     height: 300px !important;
-    width: 600px !important;
-    
+    border: 2px dashed #ddd !important;  /* Optional: Visual tweak for dropzone */
+}
+
+/* Ensure dataframe and tables take full container width */
+[data-testid="stDataFrame"] {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+[data-testid="stDataFrame"] .dataframe {
+    width: 100% !important;
+    overflow-x: auto !important;  /* Horizontal scroll if needed for wide tables */
+}
+
+/* General full-width for other elements like number_input if desired */
+[data-testid="stNumberInput"] {
+    width: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -71,6 +98,9 @@ if uploaded_file is not None:
 
         grouped = df.groupby(['underlying_symbol', 'type']).agg(agg_dict).reset_index()
         grouped['ratio'] = (grouped['premium'] / grouped['marketcap']) * 1000000
+        grouped['ratio'] = (grouped['ratio'] * 100).astype(int) / 100  # Truncates to 2 decimals
+        grouped['underlying_price'] = (grouped['underlying_price'] * 100).astype(int) / 100
+
         filtered_df = grouped[grouped['ratio'] >= threshold].sort_values('ratio', ascending=False)
 
         if not filtered_df.empty:
@@ -110,7 +140,7 @@ if uploaded_file is not None:
                     use_container_width=True,  # Fit to container width
                     column_config=col_config,  # Auto-fit per column
                     hide_index=True,  # Cleaner look
-                    height=fit,
+                    height=None
                 )
 
             if st.button("Send to Discord (Image + Excel)"):
