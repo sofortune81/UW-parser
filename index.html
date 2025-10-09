@@ -67,7 +67,7 @@
 
     <div>
         Premium/MC * 1,000,000 Threshold (minimum 1):
-        <input type="number" id="thresholdInput" min="1" value="100">
+        <input type="number" id="thresholdInput" min="1" value="10">
     </div>
 
     <button onclick="processData()">Process Data</button>
@@ -142,14 +142,12 @@
                         return;
                     }
 
-                    // Ensure headers is an array
                     const headers = Array.isArray(data[0]) ? data[0] : Object.keys(data[0] || {});
                     if (!headers.length) {
                         alert('No headers found in CSV file.');
                         return;
                     }
 
-                    // Normalize headers for case-insensitive comparison
                     const normalizedHeaders = headers.map(h => h.trim().toLowerCase());
                     const requiredHeaders = ['underlying_symbol', 'type', 'premium', 'marketcap'];
                     const missingHeaders = requiredHeaders.filter(h => !normalizedHeaders.includes(h.toLowerCase()));
@@ -158,7 +156,6 @@
                         return;
                     }
 
-                    // Map normalized headers to their original names
                     const headerMap = {};
                     headers.forEach((h, i) => {
                         headerMap[normalizedHeaders[i]] = h;
@@ -166,10 +163,10 @@
 
                     const rows = data.slice(1);
                     filteredDataTable.innerHTML = '';
+                    console.log('Total rows:', rows.length); // Debugging log
 
                     const threshold = parseFloat(thresholdInput.value) || 1;
 
-                    // Aggregate rows by Underlying Symbol and Type
                     const groups = new Map();
                     for (const row of rows) {
                         const rowData = {};
@@ -178,6 +175,9 @@
                         } else {
                             headers.forEach(header => rowData[header.trim().toLowerCase()] = row[header] || '');
                         }
+                        // Map ewma_nbbo_bid and ewma_nbbo_ask to bid and ask for parsing
+                        rowData['bid'] = rowData['ewma_nbbo_bid'] || rowData['bid'] || '';
+                        rowData['ask'] = rowData['ewma_nbbo_ask'] || rowData['ask'] || '';
 
                         const underlyingSymbol = rowData['underlying_symbol'];
                         const type = rowData['type'];
@@ -220,7 +220,6 @@
                         groups.get(key).premium += premium;
                     }
 
-                    // Filter aggregated rows by threshold
                     const filteredRows = Array.from(groups.values()).filter(group => {
                         const ratio = (group.premium / group.marketcap) * 1000000;
                         return ratio >= threshold && group.premium > 0 && group.marketcap > 0;
@@ -244,7 +243,9 @@
                         volume: isNaN(group.volume) ? '' : group.volume
                     })).sort((a, b) => parseFloat(b.ratio) - parseFloat(a.ratio));
 
-                    // Populate filtered data table
+                    console.log('Filtered rows:', filteredRows.length); // Debugging log
+                    filteredRows.forEach((row, index) => console.log(`Row ${index + 1}:`, row)); // Debugging log
+
                     filteredRows.forEach(row => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
@@ -254,7 +255,7 @@
                             <td>${row.marketcap}</td>
                             <td>${row.ratio}</td>
                             <td>${row.date}</td>
-                            <td>${row.time}</td>
+                            <td opowie="time">${row.time}</td>
                             <td>${row.side}</td>
                             <td>${row.strike}</td>
                             <td>${row.expiry}</td>
@@ -269,20 +270,17 @@
                         filteredDataTable.appendChild(tr);
                     });
 
-                    // Create Discord embeds for the filtered data (one embed per row)
                     if (filteredRows.length > 0) {
                         const maxEmbedsPerMessage = 10;
                         const batchSize = maxEmbedsPerMessage;
 
-                        // Function to sanitize field values (same as before)
                         const sanitize = (value) => (value || '').toString().replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|');
 
-                        // Batch the rows into groups for multiple messages
                         for (let i = 0; i < filteredRows.length; i += batchSize) {
                             const batch = filteredRows.slice(i, i + batchSize);
                             const embeds = batch.map(row => ({
                                 title: `Option Alert: ${sanitize(row.underlying_symbol)} (${sanitize(row.type)})`,
-                                color: 0x00FF00,  // Green color for high-value alerts
+                                color: 0x00FF00,
                                 fields: [
                                     { name: 'Ticker', value: sanitize(row.underlying_symbol), inline: true },
                                     { name: 'Type', value: sanitize(row.type), inline: true },
@@ -305,10 +303,9 @@
                                 footer: {
                                     text: `Threshold: ${threshold} | Row ${i + 1}-${Math.min(i + batchSize, filteredRows.length)} of ${filteredRows.length} | Sorted by Prem/MC (desc)`
                                 },
-                                timestamp: new Date().toISOString()  // Optional: Add current timestamp
+                                timestamp: new Date().toISOString()
                             }));
 
-                            // Send the batch as a single webhook message
                             try {
                                 const response = await fetch(DISCORD_WEBHOOK_URL, {
                                     method: 'POST',
@@ -316,8 +313,8 @@
                                         'Content-Type': 'application/json'
                                     },
                                     body: JSON.stringify({
-                                        username: 'CSV Processor Bot',  // Optional: Custom webhook name
-                                        avatar_url: 'https://example.com/icon.png',  // Optional: Custom avatar
+                                        username: 'CSV Processor Bot',
+                                        avatar_url: 'https://example.com/icon.png',
                                         embeds: embeds
                                     })
                                 });
