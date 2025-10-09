@@ -8,20 +8,27 @@
     <script src="config.js"></script>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: Inconsolata, sans-serif;
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
+        * {
+            border-radius: 8px;
+        }
         #dropZone {
+            display: flex;
+            align-items: center;
+            justify-content: center;
             border: 2px dashed #ccc;
             padding: 20px;
-            text-align: center;
             margin-bottom: 20px;
             cursor: pointer;
+            height: 300px;
+            background-color: lightgray;
         }
         #dropZone.dragover {
-            background-color: #e1e1e1;
+            background-color: lightgreen;
         }
         table {
             width: 100%;
@@ -38,13 +45,13 @@
         }
         button {
             padding: 10px 20px;
-            background-color: #007bff;
+            background-color: darkseagreen;
             color: white;
             border: none;
             cursor: pointer;
         }
         button:hover {
-            background-color: #0056b3;
+            background-color: forestgreen;
         }
         input[type="number"] {
             padding: 5px;
@@ -60,7 +67,7 @@
 
     <div>
         Premium/MC * 1,000,000 Threshold (minimum 1):
-        <input type="number" id="thresholdInput" min="1" value="1">
+        <input type="number" id="thresholdInput" min="1" value="100">
     </div>
 
     <button onclick="processData()">Process Data</button>
@@ -235,7 +242,7 @@
                         underlying_price: isNaN(group.underlying_price) ? '' : group.underlying_price.toFixed(2),
                         size: isNaN(group.size) ? '' : group.size,
                         volume: isNaN(group.volume) ? '' : group.volume
-                    }));
+                    })).sort((a, b) => parseFloat(b.ratio) - parseFloat(a.ratio));
 
                     // Populate filtered data table
                     filteredRows.forEach(row => {
@@ -262,60 +269,46 @@
                         filteredDataTable.appendChild(tr);
                     });
 
-                    // Create Markdown table for Discord
+                    // Create Discord embeds for the filtered data (one embed per row)
                     if (filteredRows.length > 0) {
-                        const headers = [
-                            'Ticker', 'Type', 'Premium', 'Market Cap', 'Prem/MC',
-                            'Date', 'Time', 'Side', 'Strike', 'Expiry', 'DTE', 'Bid', 'Ask',
-                            'Price', 'STK $', 'Size', 'Volume'
-                        ];
-                        const colWidths = [6, 4, 12, 18, 8, 10, 11, 4, 6, 11, 4, 5, 5, 5, 8, 8, 8];
+                        const maxEmbedsPerMessage = 10;
+                        const batchSize = maxEmbedsPerMessage;
 
+                        // Function to sanitize field values (same as before)
                         const sanitize = (value) => (value || '').toString().replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|');
 
-                        const maxMessageLength = 1900;
-                        let messages = [];
-                        let currentTable = '```\n' + headers.map((header, i) => header.padEnd(colWidths[i])).join('|') + '\n' +
-                                          headers.map((_, i) => '-'.repeat(colWidths[i])).join('|') + '\n';
-                        let currentLength = currentTable.length;
+                        // Batch the rows into groups for multiple messages
+                        for (let i = 0; i < filteredRows.length; i += batchSize) {
+                            const batch = filteredRows.slice(i, i + batchSize);
+                            const embeds = batch.map(row => ({
+                                title: `Option Alert: ${sanitize(row.underlying_symbol)} (${sanitize(row.type)})`,
+                                color: 0x00FF00,  // Green color for high-value alerts
+                                fields: [
+                                    { name: 'Ticker', value: sanitize(row.underlying_symbol), inline: true },
+                                    { name: 'Type', value: sanitize(row.type), inline: true },
+                                    { name: 'Premium', value: sanitize(row.premium), inline: true },
+                                    { name: 'Market Cap', value: sanitize(row.marketcap), inline: true },
+                                    { name: 'Prem/MC', value: sanitize(row.ratio), inline: true },
+                                    { name: 'Date', value: sanitize(row.date), inline: true },
+                                    { name: 'Time', value: sanitize(row.time), inline: true },
+                                    { name: 'Side', value: sanitize(row.side), inline: true },
+                                    { name: 'Strike', value: sanitize(row.strike), inline: true },
+                                    { name: 'Expiry', value: sanitize(row.expiry), inline: true },
+                                    { name: 'DTE', value: sanitize(row.dte), inline: true },
+                                    { name: 'Bid', value: sanitize(row.bid), inline: true },
+                                    { name: 'Ask', value: sanitize(row.ask), inline: true },
+                                    { name: 'Price', value: sanitize(row.price), inline: true },
+                                    { name: 'STK $', value: sanitize(row.underlying_price), inline: true },
+                                    { name: 'Size', value: sanitize(row.size), inline: true },
+                                    { name: 'Volume', value: sanitize(row.volume), inline: true }
+                                ],
+                                footer: {
+                                    text: `Threshold: ${threshold} | Row ${i + 1}-${Math.min(i + batchSize, filteredRows.length)} of ${filteredRows.length} | Sorted by Prem/MC (desc)`
+                                },
+                                timestamp: new Date().toISOString()  // Optional: Add current timestamp
+                            }));
 
-                        filteredRows.forEach(row => {
-                            const rowString = [
-                                sanitize(row.underlying_symbol).padEnd(colWidths[0]),
-                                sanitize(row.type).padEnd(colWidths[1]),
-                                sanitize(row.premium).padEnd(colWidths[2]),
-                                sanitize(row.marketcap).padEnd(colWidths[3]),
-                                sanitize(row.ratio).padEnd(colWidths[4]),
-                                sanitize(row.date).padEnd(colWidths[5]),
-                                sanitize(row.time).padEnd(colWidths[6]),
-                                sanitize(row.side).padEnd(colWidths[7]),
-                                sanitize(row.strike).padEnd(colWidths[8]),
-                                sanitize(row.expiry).padEnd(colWidths[9]),
-                                sanitize(row.dte).padEnd(colWidths[10]),
-                                sanitize(row.bid).padEnd(colWidths[11]),
-                                sanitize(row.ask).padEnd(colWidths[12]),
-                                sanitize(row.price).padEnd(colWidths[13]),
-                                sanitize(row.underlying_price).padEnd(colWidths[14]),
-                                sanitize(row.size).padEnd(colWidths[15]),
-                                sanitize(row.volume).padEnd(colWidths[16])
-                            ].join('|') + '\n';
-
-                            if (currentLength + rowString.length > maxMessageLength) {
-                                currentTable += '```';
-                                messages.push(currentTable);
-                                currentTable = '```\n' + headers.map((header, i) => header.padEnd(colWidths[i])).join('|') + '\n' +
-                                              headers.map((_, i) => '-'.repeat(colWidths[i])).join('|') + '\n';
-                                currentLength = currentTable.length;
-                            }
-
-                            currentTable += rowString;
-                            currentLength += rowString.length;
-                        });
-
-                        currentTable += '```';
-                        messages.push(currentTable);
-
-                        for (const message of messages) {
+                            // Send the batch as a single webhook message
                             try {
                                 const response = await fetch(DISCORD_WEBHOOK_URL, {
                                     method: 'POST',
@@ -323,18 +316,20 @@
                                         'Content-Type': 'application/json'
                                     },
                                     body: JSON.stringify({
-                                        content: message
+                                        username: 'CSV Processor Bot',  // Optional: Custom webhook name
+                                        avatar_url: 'https://example.com/icon.png',  // Optional: Custom avatar
+                                        embeds: embeds
                                     })
                                 });
                                 if (!response.ok) {
                                     const errorData = await response.json().catch(() => ({}));
                                     console.error('Discord API error:', errorData);
-                                    alert(`Failed to send data to Discord: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+                                    alert(`Failed to send embeds to Discord: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
                                     return;
                                 }
                             } catch (error) {
-                                console.error('Error sending to Discord:', error);
-                                alert('Failed to send data to Discord: ' + error.message);
+                                console.error('Error sending embeds to Discord:', error);
+                                alert('Failed to send embeds to Discord: ' + error.message);
                                 return;
                             }
                         }
